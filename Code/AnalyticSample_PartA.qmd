@@ -1,0 +1,243 @@
+---
+title: "Analytic Sample_PartA"
+format: html
+editor: visual
+---
+```{r}
+# Libraries and definitions
+library(tidyverse)
+library(nhanesA)
+library(here)
+# 1. Load statutory CDC height-for-age chart
+statage <- read.csv("https://www.cdc.gov/growthcharts/data/zscore/statage.csv")
+names(statage) <- tolower(names(statage))
+
+# 2. Define Zemel et al. (2011) TBLH Reference Tables
+tblh_lms <- read.csv(text = "sex,age_band,L,M,S
+1,5,-0.236,0.530,0.083
+1,6,-0.278,0.570,0.084
+1,7,-0.319,0.613,0.084
+1,8,-0.360,0.654,0.085
+1,9,-0.402,0.692,0.085
+1,10,-0.443,0.728,0.086
+1,11,-0.484,0.766,0.086
+1,12,-0.526,0.813,0.087
+1,13,-0.567,0.871,0.087
+1,14,-0.608,0.934,0.088
+1,15,-0.650,0.994,0.088
+1,16,-0.691,1.042,0.089
+1,17,-0.732,1.072,0.089
+1,18,-0.774,1.087,0.090
+1,19,-0.815,1.093,0.091
+2,5,-0.146,0.521,0.082
+2,6,-0.010,0.561,0.084
+2,7,0.110,0.601,0.086
+2,8,0.205,0.640,0.087
+2,9,0.270,0.681,0.088
+2,10,0.298,0.729,0.089
+2,11,0.279,0.784,0.089
+2,12,0.201,0.843,0.088
+2,13,0.065,0.894,0.086
+2,14,-0.110,0.929,0.083
+2,15,-0.288,0.948,0.082
+2,16,-0.440,0.958,0.080
+2,17,-0.560,0.965,0.079
+2,18,-0.656,0.969,0.078
+2,19,-0.741,0.970,0.077")
+
+tblh_coefs <- read.csv(text = "sex,age_band,intercept,slope
+1,5,-0.090,0.704
+1,6,-0.071,0.666
+1,7,-0.064,0.715
+1,8,-0.029,0.744
+1,9,-0.027,0.669
+1,10,-0.058,0.591
+1,11,-0.117,0.591
+1,12,-0.128,0.550
+1,13,-0.139,0.556
+1,14,-0.111,0.553
+1,15,-0.032,0.327
+1,16,-0.022,0.244
+1,17,-0.026,0.236
+1,18,-0.047,0.321
+1,19,-0.007,0.285
+2,5,-0.228,0.879
+2,6,-0.094,0.736
+2,7,-0.003,0.720
+2,8,0.000,0.682
+2,9,-0.097,0.622
+2,10,-0.188,0.639
+2,11,-0.256,0.708
+2,12,-0.150,0.620
+2,13,-0.081,0.494
+2,14,-0.029,0.388
+2,15,-0.039,0.371
+2,16,-0.045,0.323
+2,17,-0.015,0.316
+2,18,-0.013,0.355
+2,19,-0.007,0.302")
+
+# 3. Helper function for LMS Z-score calculation
+lms_z <- function(x, L, M, S) ifelse(L != 0, ((x / M)^L - 1) / (L * S), log(x / M) / S)
+```
+```{r}
+# --- DEMOGRAPHICS (DEMO_H, DEMO_I, DEMO_J) ---
+# 1. Fetch individual cycles
+demo_h <- nhanes('DEMO_H') %>% 
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
+
+demo_i <- nhanes('DEMO_I') %>% 
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
+
+# Cycle J uses DMDHREDZ instead of DMDHREDU -> selecting and renaming
+demo_j <- nhanes('DEMO_J') %>% 
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDZ, INDFMIN2, INDFMPIR) %>% 
+  rename(DMDHREDU = DMDHREDZ)
+
+# 2. Stack
+demo_raw <- bind_rows(demo_h, demo_i, demo_j)
+```
+```{r}
+# --- DEXA / BODY MEASUREMENTS (DXX & BMX) ---
+dexa_raw <- bind_rows(
+  nhanes('DXX_H') %>% select(SEQN, DXDSTBMD),
+  nhanes('DXX_I') %>% select(SEQN, DXDSTBMD),
+  nhanes('DXX_J') %>% select(SEQN, DXDSTBMD)
+)
+
+bmx_raw <- bind_rows(
+  nhanes('BMX_H') %>% select(SEQN, BMXHT),
+  nhanes('BMX_I') %>% select(SEQN, BMXHT),
+  nhanes('BMX_J') %>% select(SEQN, BMXHT)
+)
+```
+```{r}
+# --- PHYSICAL ACTIVITY & SCREEN TIME (PAQ) ---
+
+# Cycles H (2013-14) and I (2015-16)
+# All PA and screen time questions are inside PAQ_H and PAQ_I
+paq_h <- nhanes('PAQ_H') %>% 
+  select(SEQN, PAQ710, PAQ715, PAQ722, PAQ706, PAQ650, PAQ655, PAD660, PAQ665, PAQ670, PAD675)
+
+paq_i <- nhanes('PAQ_I') %>% 
+  select(SEQN, PAQ710, PAQ715, PAQ722, PAQ706, PAQ650, PAQ655, PAD660, PAQ665, PAQ670, PAD675)
+
+# Cycle J (2017-18)
+# Youth screen time/activity (PAQ710, PAQ715, PAQ722, PAQ706) live in PAQY_J
+paq_j_youth <- nhanes('PAQY_J') %>% 
+  select(SEQN, PAQ710, PAQ715, PAQ706)
+
+# Adult/Teen recreational activity (PAQ650, PAQ655, PAD660, PAQ665, PAQ670, PAD675) live in PAQ_J
+paq_j_general <- nhanes('PAQ_J') %>% 
+  select(SEQN, PAQ650, PAQ655, PAD660, PAQ665, PAQ670, PAD675)
+
+# Merge Cycle J youth + general files together by SEQN
+paq_j <- full_join(paq_j_youth, paq_j_general, by = "SEQN")
+
+# --- 3. Stack all 3 cycles cleanly ---
+paq_raw <- bind_rows(paq_h, paq_i, paq_j)
+```
+```{r}
+# ---FOOD SECURITY (FSQ) ---
+fsq_raw <- bind_rows(
+  nhanes('FSQ_H') %>% select(SEQN, FSDCH),
+  nhanes('FSQ_I') %>% select(SEQN, FSDCH),
+  nhanes('FSQ_J') %>% select(SEQN, FSDCH)
+)
+```
+```{r}
+## -- MERGE TOGETHER -- ##
+master_raw <- demo_raw %>%
+  left_join(dexa_raw, by = "SEQN") %>%
+  left_join(bmx_raw, by = "SEQN") %>%
+  left_join(paq_raw, by = "SEQN") %>%
+  left_join(fsq_raw, by = "SEQN")
+```
+```{r}
+# ---INITIAL FILTERING & SCREEN TIME CLEANING ---
+# Preserves all N = 29,400 observations per survey estimation rules
+nhanes_clean <- master_raw %>%
+  mutate(
+    # --- 1. Sequential Selection Flags ---
+    # Study-relevant population restriction: Age 8-17
+    flag_age = ifelse(RIDAGEYR >= 8 & RIDAGEYR <= 17, 1, 0),
+    
+    # Study-relevant population restriction: Valid exam age in months
+    flag_exam_age = ifelse(flag_age == 1 & !is.na(RIDEXAGM), 1, 0),
+    
+    # Missing data exclusion: Standing height (BMXHT)
+    flag_height = ifelse(flag_exam_age == 1 & !is.na(BMXHT), 1, 0),
+    
+    # Missing data exclusion: Total body less head BMD (DXDSTBMD)
+    flag_bmd = ifelse(flag_height == 1 & !is.na(DXDSTBMD), 1, 0),
+    
+    # Primary Subpopulation Indicator
+    subpop = ifelse(flag_bmd == 1, 1, 0),
+    
+    # --- 2. Derived Variables & Weights ---
+    WTMEC6YR = WTMEC2YR / 3,
+    tv_hours = case_when(
+      PAQ710 == 8 ~ 0,
+      PAQ710 %in% c(77, 99) ~ NA_real_,
+      TRUE ~ as.numeric(PAQ710)
+    ),
+    comp_hours = case_when(
+      PAQ715 == 8 ~ 0,
+      PAQ715 %in% c(77, 99) ~ NA_real_,
+      TRUE ~ as.numeric(PAQ715)
+    ),
+    total_screen_time = tv_hours + comp_hours,
+    parent_edu = ifelse(DMDHREDU %in% c(7, 9), NA, DMDHREDU),
+    age_band = floor(RIDEXAGM / 12)
+  )
+```
+```{r}
+# --- PRINT FLOW DIAGRAM COUNTS ---
+cat("--- SAMPLE SELECTION FLOW COUNTS ---\n")
+cat("Total NHANES 2013-2018 Raw Sample: ", nrow(nhanes_clean), "\n")
+cat("Excluded: Age < 8 or > 17: ", sum(nhanes_clean$flag_age == 0), "\n")
+cat("Remaining (Age 8-17): ", sum(nhanes_clean$flag_age == 1), "\n\n")
+
+cat("Excluded: Missing Exam Age (RIDEXAGM): ", sum(nhanes_clean$flag_age == 1 & nhanes_clean$flag_exam_age == 0), "\n")
+cat("Remaining (Valid Exam Age): ", sum(nhanes_clean$flag_exam_age == 1), "\n\n")
+
+cat("Excluded: Missing Standing Height (BMXHT): ", sum(nhanes_clean$flag_exam_age == 1 & nhanes_clean$flag_height == 0), "\n")
+cat("Remaining (Valid Height): ", sum(nhanes_clean$flag_height == 1), "\n\n")
+
+cat("Excluded: Missing DEXA BMD (DXDSTBMD): ", sum(nhanes_clean$flag_height == 1 & nhanes_clean$flag_bmd == 0), "\n")
+cat("FINAL ANALYTIC SAMPLE (subpop = 1): ", sum(nhanes_clean$subpop == 1), "\n")
+```
+```{r}
+# ---CALCULATE HEIGHT Z-SCORES (HAZ) ---
+agemos <- nhanes_clean$RIDEXAGM + 0.5
+nhanes_clean$haz <- NA_real_
+
+# Convert factor sex to numeric integer (1 = Male, 2 = Female) so loop matches properly
+sex_num <- as.numeric(nhanes_clean$RIAGENDR)
+
+for (s in c(1, 2)) {
+  m <- !is.na(sex_num) & sex_num == s
+  ref <- statage[statage$sex == s, ]
+  ref <- ref[order(ref$agemos), ]
+  L <- approx(ref$agemos, ref$l, agemos[m], rule = 2)$y
+  M <- approx(ref$agemos, ref$m, agemos[m], rule = 2)$y
+  S <- approx(ref$agemos, ref$s, agemos[m], rule = 2)$y
+  nhanes_clean$haz[m] <- lms_z(nhanes_clean$BMXHT[m], L, M, S)
+}
+```
+```{r}
+# --- 9. CALCULATE HEIGHT-ADJUSTED BMD Z-SCORES & SAVE ---
+nhanes_clean <- nhanes_clean %>%
+  mutate(sex = as.numeric(RIAGENDR)) %>%
+  left_join(tblh_coefs, by = c("sex", "age_band")) %>%
+  left_join(tblh_lms, by = c("sex", "age_band")) %>%
+  mutate(
+    predicted_z = intercept + slope * haz,
+    observed_z = lms_z(DXDSTBMD, L, M, S),
+    bmd_zscore_adj = observed_z - predicted_z
+  )
+```
+```{r}
+# Save master dataset locally
+saveRDS(nhanes_clean, file = here("data", "processed", "nhanes_bmd_pediatric_master.rds"))
+```
