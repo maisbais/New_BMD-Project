@@ -161,7 +161,6 @@ master_raw <- demo_raw %>%
 ```
 
 ```{r}
-#new nma
 # ---step 1. INITIAL FILTERING & SCREEN TIME CLEANING ---
 # Preserves all N = 29,400 observations per survey estimation rules
 nhanes_clean <- master_raw %>%
@@ -185,7 +184,6 @@ nhanes_clean <- master_raw %>%
 ```
 
 ```{r}
-#new nma
 # --- Step 2. PHASE 1: PROTOCOL ELIGIBILITY ---
 nhanes_clean <- nhanes_clean %>%
   mutate(
@@ -203,7 +201,6 @@ subpop_eligible = ifelse(flag_dexa_eligible == 1, 1, 0))
 ```
 
 ```{r}
-#new nma
 # --- Step 3. PHASE 2: MISSINGNESS EXCLUSIONS ---
 nhanes_clean <- nhanes_clean %>%
   mutate(
@@ -236,7 +233,6 @@ nhanes_clean <- nhanes_clean %>%
 ```
 
 ```{r}
-#new nma
 # --- Step 4. PRINT PHASE 1 COUNTS (ELIGIBILITY) ---
 cat("=========================================================\n")
 cat("      PHASE 1: PROTOCOL ELIGIBILITY COUNTS              \n")
@@ -263,7 +259,6 @@ cat("=========================================================\n")
 ```
 
 ```{r}
-#new nma
 # --- 5. PRINT PHASE 2 COUNTS (MISSINGNESS EXCLUSIONS) ---
 cat("=========================================================\n")
 cat("      PHASE 2: MISSINGNESS EXCLUSION COUNTS             \n")
