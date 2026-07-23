@@ -93,8 +93,7 @@ demo_i <- nhanes('DEMO_I') %>%
 
 # Cycle J uses DMDHREDZ instead of DMDHREDU -> selecting and renaming
 demo_j <- nhanes('DEMO_J') %>% 
-  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDZ, INDFMIN2, INDFMPIR) %>% 
-  rename(DMDHREDU = DMDHREDZ)
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDZ, INDFMIN2, INDFMPIR)
 
 # 2. Stack
 demo_raw <- bind_rows(demo_h, demo_i, demo_j)
@@ -178,9 +177,23 @@ nhanes_clean <- master_raw %>%
       TRUE ~ as.numeric(PAQ715)
     ),
     total_screen_time = tv_hours + comp_hours,
-    parent_edu = ifelse(DMDHREDU %in% c(7, 9), NA, DMDHREDU),
+    parent_edu = case_when(
+      # Check 2013-2016 Waves (DMDHREDU) using text matching or numeric codes
+      !is.na(DMDHREDU) & (as.character(DMDHREDU) %in% c("1", "2", "Less than 9th grade", "9-11th grade (Includes 12th grade with no diploma)") | as.numeric(DMDHREDU) %in% c(1, 2)) ~ "Less than High School",
+      !is.na(DMDHREDU) & (as.character(DMDHREDU) %in% c("3", "4", "High school graduate/GED or equivalent", "Some college or AA degree") | as.numeric(DMDHREDU) %in% c(3, 4)) ~ "High School / Some College",
+      !is.na(DMDHREDU) & (as.character(DMDHREDU) %in% c("5", "College graduate or above") | as.numeric(DMDHREDU) == 5) ~ "College Grad or Above",
+      
+      # Check 2017-2018 Wave (DMDHREDZ) using text matching or numeric codes
+      !is.na(DMDHREDZ) & (as.character(DMDHREDZ) %in% c("1", "Less than high school graduate") | as.numeric(DMDHREDZ) == 1) ~ "Less than High School",
+      !is.na(DMDHREDZ) & (as.character(DMDHREDZ) %in% c("2", "High school graduate/GED or some college") | as.numeric(DMDHREDZ) == 2) ~ "High School / Some College",
+      !is.na(DMDHREDZ) & (as.character(DMDHREDZ) %in% c("3", "College graduate or above") | as.numeric(DMDHREDZ) == 3) ~ "College Grad or Above",
+      
+      .default = NA_character_
+    ) %>% factor(levels = c("Less than High School", "High School / Some College", "College Grad or Above")),
+    
     age_band = floor(RIDEXAGM / 12)
   )
+
 ```
 
 ```{r}
@@ -211,7 +224,7 @@ nhanes_clean <- nhanes_clean %>%
     flag_valid_height = ifelse(flag_valid_dexa == 1 & !is.na(BMXHT), 1, 0),
     
     # Removes participants missing TV/computer screen time data
-    flag_valid_screen = ifelse(flag_valid_dexa == 1 & !is.na(total_screen_time), 1, 0),
+    flag_valid_screen = ifelse(flag_valid_height == 1 & !is.na(total_screen_time), 1, 0),
     
     # Removes participants missing child food security questionnaire data
     flag_valid_fsq = ifelse(flag_valid_screen == 1 & !is.na(FSDCH), 1, 0),
@@ -310,6 +323,7 @@ sum(nhanes_clean$flag_valid_fsq == 1 &
 #parent ed
 sum(nhanes_clean$flag_valid_fsq == 1 & 
     (is.na(nhanes_clean$parent_edu)))
+
 ```
 
 ```{r}
@@ -332,7 +346,7 @@ for (s in c(1, 2)) {
 ```
 
 ```{r}
-# --- 9. CALCULATE HEIGHT-ADJUSTED BMD Z-SCORES & SAVE ---
+# --- CALCULATE HEIGHT-ADJUSTED BMD Z-SCORES & SAVE ---
 nhanes_clean <- nhanes_clean %>%
   mutate(sex = as.numeric(RIAGENDR)) %>%
   left_join(tblh_coefs, by = c("sex", "age_band")) %>%

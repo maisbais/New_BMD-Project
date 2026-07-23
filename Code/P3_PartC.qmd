@@ -18,7 +18,7 @@ nhanes_clean <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_master.r
 # Verification
 cat("--- DATASET VERIFICATION ---\n")
 cat("Total Raw Sample Loaded (N): ", nrow(nhanes_clean), "\n")
-cat("Analytic Subpopulation (subpop == 1): ", sum(nhanes_clean$subpop == 1, na.rm = TRUE), "\n")
+cat("Analytic Subpopulation (subpop1 == 1): ", sum(nhanes_clean$subpop1 == 1, na.rm = TRUE), "\n")
 ```
 
 ```{r}
@@ -29,59 +29,68 @@ temp_design <- svydesign(
   strata = ~SDMVSTRA,
   weights = ~WTMEC6YR,
   nest = TRUE,
-  data = nhanes_clean %>% filter(subpop == 1)
-)
+  data = nhanes_clean) 
+
+#set subpop equal to our analytic sample
+subpop_temp <- subset(temp_design, subpop1 ==1)
 
 # Extract weighted 25th, 50th, and 75th percentiles of total screen time
 screen_quantiles <- svyquantile(
   ~total_screen_time,
-  design = temp_design,
+  design = subpop_design,
   quantiles = c(0.25, 0.50, 0.75),
   na.rm = TRUE
 )
+
 
 # Cutpoints
 q25 <- as.numeric(screen_quantiles$total_screen_time[1, "quantile"])
 q50 <- as.numeric(screen_quantiles$total_screen_time[2, "quantile"])
 q75 <- as.numeric(screen_quantiles$total_screen_time[3, "quantile"])
+
+print(screen_quantiles)
 ```
 
 ```{r}
-## Factors for Table 1 
-# --- PREPARE FACTORS FOR TABLE 1 ---
-nhanes_table1_prep <- nhanes_clean %>%
+#create new var for screen time quartiles and set as factor
+nhanes_newvars <- nhanes_clean %>%
   mutate(
-    # Screen Time Quartiles
-    screen_quartiles = case_when(
-      total_screen_time <= q25 ~ paste0("Q1 (<= ", q25, " hrs) [Ref]"),
-      total_screen_time > q25 & total_screen_time <= q50 ~ paste0("Q2 (", q25, "-", q50, " hrs)"),
-      total_screen_time > q50 & total_screen_time <= q75 ~ paste0("Q3 (", q50, "-", q75, " hrs)"),
-      total_screen_time > q75 ~ paste0("Q4 (> ", q75, " hrs)"),
-      TRUE ~ NA_character_
-    ) %>% as.factor(),
-    
-    # Sex: Convert to factor if numeric, or convert directly if already text
-    sex_fact = as.factor(RIAGENDR),
-    
-    # Race: Keep the existing clean text labels from master file
-    race_fact = as.factor(RIDRETH3),
-    
-    # Parent Education
-    parent_edu_fact = case_when(
-      parent_edu %in% c(1, 2, "Less than high school", "High school graduate/GED or equivalent") ~ "High School or Less", # Adjusts if text or numeric
-      parent_edu %in% c(3, 4, 5, "Some college or AA degree", "College graduate or above") ~ "Some College or Above",
-      TRUE ~ as.character(parent_edu)
-    ) %>% as.factor(),
-    
-    # Poverty Income Ratio (PIR)
-    pir_num = as.numeric(INDFMPIR),
-    pir_cat = case_when(
-      pir_num < 1.30 ~ "Low Income (< 130% PIR)",
-      pir_num >= 1.30 & pir_num <= 3.50 ~ "Middle Income (130-350% PIR)",
-      pir_num > 3.50 ~ "High Income (> 350% PIR)",
-      TRUE ~ NA_character_
-    ) %>% factor(levels = c("Low Income (< 130% PIR)", "Middle Income (130-350% PIR)", "High Income (> 350% PIR)"))
-  )
+    screen_quart = case_when(
+      total_screen_time <= q25 ~ "Q1",
+      total_screen_time >q25 & total_screen_time <= q50 ~ "Q2",
+      total_screen_time >q50 & total_screen_time <= q75 ~ "Q3",
+      total_screen_time >q75 ~ "Q4",
+    .default = NA_character_) %>%
+      factor(levels = c("Q1", "Q2", "Q3", "Q4")))
+
+#unweighted sample size per quartile, restricted to subpop1: >4,600 in each
+table(nhanes_newvars$screen_quart[nhanes_newvars$subpop1 == 1], useNA = "always")
+
+#create new var for FPL categories
+nhanes_newvars <- nhanes_newvars %>%
+  mutate(
+    fpl_cat = case_when(
+      INDFMPIR < 1.30 ~ "Low Income (< 130% PIR)",
+      INDFMPIR >= 1.30 & INDFMPIR <= 3.50 ~ "Middle Income (130-350% PIR)",
+      INDFMPIR > 3.50 ~ "High Income (> 350% PIR)",
+      .default = NA_character_
+    ) %>% factor(levels = c("Low Income (< 130% PIR)", "Middle Income (130-350% PIR)", "High Income (> 350% PIR)")))
+
+# check to make sure no missing values for z scores 
+sum(nhanes_clean$subpop1 == 1 & is.na(nhanes_clean$bmd_zscore_adj))
+#Create categorical version of TBLH BMD z-scores for prevalence estimates
+nhanes_newvars <- nhanes_newvars %>%
+  mutate(
+    bmd_z_cat = case_when(
+      bmd_zscore_adj <= -2.0 ~ "Low TBLH BMD",
+      bmd_zscore_adj > -2.0 ~ "Normal TBLH BMD",
+      .default = NA_character_
+    ) %>% factor(levels = c("Normal TBLH BMD", "Low TBLH BMD")))
+
+#confirm factors in nhanes_newvars
+nhanes_newvars %>% 
+  select(RIAGENDR, RIDRETH3, fpl_cat, screen_quart, bmd_z_cat, FSDCH) %>% 
+  glimpse()
 ```
 
 ```{r}
@@ -91,75 +100,83 @@ nhanes_design_full <- svydesign(
   strata = ~SDMVSTRA,
   weights = ~WTMEC6YR,
   nest = TRUE,
-  data = nhanes_table1_prep
-)
+  data = nhanes_newvars)
 
 # Isolating analytic subpop
-nhanes_design_sub <- subset(nhanes_design_full, subpop == 1 & !is.na(screen_quartiles))
+subpop_design <- subset(nhanes_design_full, subpop1 == 1)
 ```
 
 ```{r}
-## TABLE 1 
-# 1. Survey design objects & drop unused factor levels in subpopulation
-nhanes_design_full <- svydesign(
-  id = ~SDMVPSU,
-  strata = ~SDMVSTRA,
-  weights = ~WTMEC6YR,
-  nest = TRUE,
-  data = nhanes_table1_prep
-)
+## Prevalence Estiimate ##
+#Estimate prevalence of low BMD (defined as z score less than -2.0) using weighted estimates
+svyciprop(~I(bmd_z_cat == "Low TBLH BMD"),
+          design=subpop_design,
+          method = "logit",
+          level = 0.95)
+```
 
-nhanes_design_sub <- subset(
-  nhanes_design_full, 
-  subpop == 1 & !is.na(screen_quartiles)
-)
+```{r}
+library(gtsummary)
+library(survey)
 
-nhanes_design_sub$variables <- nhanes_design_sub$variables %>%
-  mutate(
-    sex_fact = droplevels(as.factor(sex_fact)),
-    race_fact = droplevels(as.factor(race_fact)),
-    parent_edu_fact = droplevels(as.factor(parent_edu_fact)),
-    pir_cat = droplevels(as.factor(pir_cat)),
-    screen_quartiles = droplevels(as.factor(screen_quartiles))
-  )
+# Subset designs by sex
+design_males   <- subset(subpop_design, RIAGENDR %in% c("Male", "male", 1))
+design_females <- subset(subpop_design, RIAGENDR %in% c("Female", "female", 2))
 
-# 2. Render Survey-Weighted Table 1
-tbl_1 <- nhanes_design_sub %>%
+# Table 1 Variables
+tb1_vars <- c("RIDAGEYR", "RIDRETH3", "parent_edu", "fpl_cat", "FSDCH")
+
+#Table 1 - MALES
+table1_males <- design_males %>%
   tbl_svysummary(
-    by = screen_quartiles,
-    include = c(
-      RIDAGEYR, 
-      sex_fact, 
-      race_fact, 
-      parent_edu_fact, 
-      pir_cat, 
-      total_screen_time, 
-      bmd_zscore_adj
-    ),
-    label = list(
-      RIDAGEYR ~ "Age (years)",
-      sex_fact ~ "Sex",
-      race_fact ~ "Race / Ethnicity",
-      parent_edu_fact ~ "Parental Education",
-      pir_cat ~ "Poverty Income Ratio (PIR)",
-      total_screen_time ~ "Total Screen Time (hrs/day)",
-      bmd_zscore_adj ~ "Height-Adjusted BMD Z-Score"
-    ),
+    by = screen_quart, 
+    include = all_of(tb1_vars),
     statistic = list(
-      all_continuous() ~ "{mean} ({sd})",
+      all_continuous()  ~ "{mean} ({sd})", 
       all_categorical() ~ "{n_unweighted} ({p}%)"
     ),
-    digits = list(
-      all_continuous() ~ 1,
-      all_categorical() ~ c(0, 1)
-    ),
-    missing = "no"
+    digits = all_categorical() ~ c(0, 1)
   ) %>%
-  add_overall(last = FALSE) %>%
-  add_p() %>% # gtsummary automatically applies design-adjusted survey tests here!
-  bold_labels() %>%
-  modify_header(label ~ "**Demographic / Clinical Variable**")
+  add_overall(col_label = "**Overall** (N = {N_unweighted})") %>%
+  bold_labels()
 
-tbl_1
-print(tbl_1)
+table1_males
+
+#Table 1 - FEMALES
+table1_females <- design_females %>%
+  tbl_svysummary(
+    by = screen_quart, 
+    include = all_of(tb1_vars),
+    statistic = list(
+      all_continuous()  ~ "{mean} ({sd})", 
+      all_categorical() ~ "{n_unweighted} ({p}%)"
+    ),
+    digits = all_categorical() ~ c(0, 1)
+  ) %>%
+  add_overall(col_label = "**Overall** (N = {N_unweighted})") %>%
+  bold_labels()
+
+table1_females
+```
+
+```{r}
+#create subset for males and females (unweighted)
+unweighted_males <- nhanes_newvars %>%
+  filter(subpop1 == 1 & RIAGENDR == "Male")
+
+unweighted_females <- nhanes_newvars %>%
+  filter(subpop1 == 1 & RIAGENDR == "Female")
+
+nrow(unweighted_males) #verify numbers
+nrow(unweighted_females)
+
+#Unweighted counts
+unweighted_males %>%
+  freqtables::freq_table(screen_quart, RIDRETH3) %>%
+  select(
+    screen_quart = row_cat, 
+    race_ethnicity = col_cat, 
+    n, 
+    percent = percent_row
+  )
 ```
