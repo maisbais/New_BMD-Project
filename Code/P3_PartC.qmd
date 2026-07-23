@@ -1,0 +1,160 @@
+---
+title: "Part C"
+format: html
+editor: visual
+---
+
+```{r}
+# Libraries
+library(tidyverse)
+library(survey)
+library(gtsummary)
+library(tableone)
+library(here)
+
+# Dataset 
+nhanes_clean <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_master.rds"))
+
+# Verification
+cat("--- DATASET VERIFICATION ---\n")
+cat("Total Raw Sample Loaded (N): ", nrow(nhanes_clean), "\n")
+cat("Analytic Subpopulation (subpop == 1): ", sum(nhanes_clean$subpop == 1, na.rm = TRUE), "\n")
+```
+```{r}
+## Calculated weighted quantiles for exposure
+# Temporary survey design to extract weighted quantiles within subpop
+temp_design <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_clean %>% filter(subpop == 1)
+)
+
+# Extract weighted 25th, 50th, and 75th percentiles of total screen time
+screen_quantiles <- svyquantile(
+  ~total_screen_time,
+  design = temp_design,
+  quantiles = c(0.25, 0.50, 0.75),
+  na.rm = TRUE
+)
+
+# Cutpoints
+q25 <- as.numeric(screen_quantiles$total_screen_time[1, "quantile"])
+q50 <- as.numeric(screen_quantiles$total_screen_time[2, "quantile"])
+q75 <- as.numeric(screen_quantiles$total_screen_time[3, "quantile"])
+```
+```{r}
+## Factors for Table 1 
+# --- PREPARE FACTORS FOR TABLE 1 ---
+nhanes_table1_prep <- nhanes_clean %>%
+  mutate(
+    # Screen Time Quartiles
+    screen_quartiles = case_when(
+      total_screen_time <= q25 ~ paste0("Q1 (<= ", q25, " hrs) [Ref]"),
+      total_screen_time > q25 & total_screen_time <= q50 ~ paste0("Q2 (", q25, "-", q50, " hrs)"),
+      total_screen_time > q50 & total_screen_time <= q75 ~ paste0("Q3 (", q50, "-", q75, " hrs)"),
+      total_screen_time > q75 ~ paste0("Q4 (> ", q75, " hrs)"),
+      TRUE ~ NA_character_
+    ) %>% as.factor(),
+    
+    # Sex: Convert to factor if numeric, or convert directly if already text
+    sex_fact = as.factor(RIAGENDR),
+    
+    # Race: Keep the existing clean text labels from master file
+    race_fact = as.factor(RIDRETH3),
+    
+    # Parent Education
+    parent_edu_fact = case_when(
+      parent_edu %in% c(1, 2, "Less than high school", "High school graduate/GED or equivalent") ~ "High School or Less", # Adjusts if text or numeric
+      parent_edu %in% c(3, 4, 5, "Some college or AA degree", "College graduate or above") ~ "Some College or Above",
+      TRUE ~ as.character(parent_edu)
+    ) %>% as.factor(),
+    
+    # Poverty Income Ratio (PIR)
+    pir_num = as.numeric(INDFMPIR),
+    pir_cat = case_when(
+      pir_num < 1.30 ~ "Low Income (< 130% PIR)",
+      pir_num >= 1.30 & pir_num <= 3.50 ~ "Middle Income (130-350% PIR)",
+      pir_num > 3.50 ~ "High Income (> 350% PIR)",
+      TRUE ~ NA_character_
+    ) %>% factor(levels = c("Low Income (< 130% PIR)", "Middle Income (130-350% PIR)", "High Income (> 350% PIR)"))
+  )
+```
+```{r}
+## Primary survey design
+nhanes_design_full <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_table1_prep
+)
+
+# Isolating analytic subpop
+nhanes_design_sub <- subset(nhanes_design_full, subpop == 1 & !is.na(screen_quartiles))
+```
+```{r}
+## TABLE 1 
+# 1. Survey design objects & drop unused factor levels in subpopulation
+nhanes_design_full <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_table1_prep
+)
+
+nhanes_design_sub <- subset(
+  nhanes_design_full, 
+  subpop == 1 & !is.na(screen_quartiles)
+)
+
+nhanes_design_sub$variables <- nhanes_design_sub$variables %>%
+  mutate(
+    sex_fact = droplevels(as.factor(sex_fact)),
+    race_fact = droplevels(as.factor(race_fact)),
+    parent_edu_fact = droplevels(as.factor(parent_edu_fact)),
+    pir_cat = droplevels(as.factor(pir_cat)),
+    screen_quartiles = droplevels(as.factor(screen_quartiles))
+  )
+
+# 2. Render Survey-Weighted Table 1
+tbl_1 <- nhanes_design_sub %>%
+  tbl_svysummary(
+    by = screen_quartiles,
+    include = c(
+      RIDAGEYR, 
+      sex_fact, 
+      race_fact, 
+      parent_edu_fact, 
+      pir_cat, 
+      total_screen_time, 
+      bmd_zscore_adj
+    ),
+    label = list(
+      RIDAGEYR ~ "Age (years)",
+      sex_fact ~ "Sex",
+      race_fact ~ "Race / Ethnicity",
+      parent_edu_fact ~ "Parental Education",
+      pir_cat ~ "Poverty Income Ratio (PIR)",
+      total_screen_time ~ "Total Screen Time (hrs/day)",
+      bmd_zscore_adj ~ "Height-Adjusted BMD Z-Score"
+    ),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n_unweighted} ({p}%)"
+    ),
+    digits = list(
+      all_continuous() ~ 1,
+      all_categorical() ~ c(0, 1)
+    ),
+    missing = "no"
+  ) %>%
+  add_overall(last = FALSE) %>%
+  add_p() %>% # gtsummary automatically applies design-adjusted survey tests here!
+  bold_labels() %>%
+  modify_header(label ~ "**Demographic / Clinical Variable**")
+
+tbl_1
+```
