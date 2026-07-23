@@ -161,27 +161,12 @@ master_raw <- demo_raw %>%
 ```
 
 ```{r}
-# ---INITIAL FILTERING & SCREEN TIME CLEANING ---
+#new nma
+# ---step 1. INITIAL FILTERING & SCREEN TIME CLEANING ---
 # Preserves all N = 29,400 observations per survey estimation rules
 nhanes_clean <- master_raw %>%
   mutate(
-    # --- 1. Sequential Selection Flags ---
-    # Study-relevant population restriction: Age 8-17
-    flag_age = ifelse(RIDAGEYR >= 8 & RIDAGEYR <= 17, 1, 0),
-    
-    # Study-relevant population restriction: Valid exam age in months
-    flag_exam_age = ifelse(flag_age == 1 & !is.na(RIDEXAGM), 1, 0),
-    
-    # Missing data exclusion: Standing height (BMXHT)
-    flag_height = ifelse(flag_exam_age == 1 & !is.na(BMXHT), 1, 0),
-    
-    # Missing data exclusion: Total body less head BMD (DXDSTBMD)
-    flag_bmd = ifelse(flag_height == 1 & !is.na(DXDSTBMD), 1, 0),
-    
-    # Primary Subpopulation Indicator
-    subpop = ifelse(flag_bmd == 1, 1, 0),
-    
-    # --- 2. Derived Variables & Weights ---
+    # --- Derived Variables & Weights ---
     WTMEC6YR = WTMEC2YR / 3,
     tv_hours = case_when(
       PAQ710 == 8 ~ 0,
@@ -200,20 +185,124 @@ nhanes_clean <- master_raw %>%
 ```
 
 ```{r}
-# --- PRINT FLOW DIAGRAM COUNTS ---
-cat("--- SAMPLE SELECTION FLOW COUNTS ---\n")
-cat("Total NHANES 2013-2018 Raw Sample: ", nrow(nhanes_clean), "\n")
-cat("Excluded: Age < 8 or > 17: ", sum(nhanes_clean$flag_age == 0), "\n")
-cat("Remaining (Age 8-17): ", sum(nhanes_clean$flag_age == 1), "\n\n")
+#new nma
+# --- Step 2. PHASE 1: PROTOCOL ELIGIBILITY ---
+nhanes_clean <- nhanes_clean %>%
+  mutate(
+    # verifies participant attended a MEC exam (has a valid exam age and a positive MEC weight)
+    flag_mec = ifelse(!is.na(RIDEXAGM) & WTMEC2YR > 0, 1, 0),
+    
+    #verifies age range criteria (8-17 years)
+flag_age = ifelse(flag_mec == 1 & RIDAGEYR >= 8 & RIDAGEYR <= 17, 1, 0),
+  
+  #verifies eligible for dexa (includes valid and invalid results)
+flag_dexa_eligible = ifelse(flag_age == 1, 1, 0),
+  
+  #defines baseline "eligible sample" (ie. steps 1-4 of fig 1 flow diagram)
+subpop_eligible = ifelse(flag_dexa_eligible == 1, 1, 0))
+```
 
-cat("Excluded: Missing Exam Age (RIDEXAGM): ", sum(nhanes_clean$flag_age == 1 & nhanes_clean$flag_exam_age == 0), "\n")
-cat("Remaining (Valid Exam Age): ", sum(nhanes_clean$flag_exam_age == 1), "\n\n")
+```{r}
+#new nma
+# --- Step 3. PHASE 2: MISSINGNESS EXCLUSIONS ---
+nhanes_clean <- nhanes_clean %>%
+  mutate(
+    # Starts from eligible sample (subpop_eligible == 1) and removes missing/invalid DEXA scans
+    flag_valid_dexa = ifelse(subpop_eligible == 1 & !is.na(DXDSTBMD), 1, 0),
+    
+    # REmoves participants missing standing height data
+    flag_valid_height = ifelse(flag_valid_dexa == 1 & !is.na(BMXHT), 1, 0),
+    
+    # Removes participants missing TV/computer screen time data
+    flag_valid_screen = ifelse(flag_valid_dexa == 1 & !is.na(total_screen_time), 1, 0),
+    
+    # Removes participants missing child food security questionnaire data
+    flag_valid_fsq = ifelse(flag_valid_screen == 1 & !is.na(FSDCH), 1, 0),
+    
+    # Removes participants missing race/ethnicity
+    flag_valid_race = ifelse(flag_valid_fsq == 1 & !is.na(RIDRETH3), 1, 0),
+    
+    # Removes participants missing household poverty level / income ratio
+    flag_valid_pir = ifelse(flag_valid_race == 1 & !is.na(INDFMPIR), 1, 0),
+    
+    # Removes participants missing parent education level
+    flag_valid_edu = ifelse(flag_valid_pir == 1 & !is.na(parent_edu), 1, 0),
 
-cat("Excluded: Missing Standing Height (BMXHT): ", sum(nhanes_clean$flag_exam_age == 1 & nhanes_clean$flag_height == 0), "\n")
-cat("Remaining (Valid Height): ", sum(nhanes_clean$flag_height == 1), "\n\n")
+    # Defines the final group with ZERO missing data across all key study variables
+    subpop1= ifelse(flag_valid_edu == 1, 1, 0),
+    
+    #subpop (DEXA valid only) for REFERENCE
+    subpop = ifelse(flag_valid_dexa == 1, 1, 0))
+```
 
-cat("Excluded: Missing DEXA BMD (DXDSTBMD): ", sum(nhanes_clean$flag_height == 1 & nhanes_clean$flag_bmd == 0), "\n")
-cat("FINAL ANALYTIC SAMPLE (subpop = 1): ", sum(nhanes_clean$subpop == 1), "\n")
+```{r}
+#new nma
+# --- Step 4. PRINT PHASE 1 COUNTS (ELIGIBILITY) ---
+cat("=========================================================\n")
+cat("      PHASE 1: PROTOCOL ELIGIBILITY COUNTS              \n")
+cat("=========================================================\n")
+
+# Total starting sample across all 3 survey waves
+cat("Total NHANES 2013-2018 Combined Sample:    ", nrow(nhanes_clean), "\n\n")
+
+# Exclusions & remaining count for MEC attendance
+cat("Excluded: Did not attend MEC exam:        -", sum(nhanes_clean$flag_mec == 0), "\n")
+cat("  Attended MEC Exam:                       ", sum(nhanes_clean$flag_mec == 1), "\n\n")
+
+# Exclusions & remaining count for Age 8-17 (checked among MEC attendees)
+cat("Excluded: Outside age range 8–17 years:   -", sum(nhanes_clean$flag_mec == 1 & nhanes_clean$flag_age == 0), "\n")
+cat("  Aged 8–17 years:                         ", sum(nhanes_clean$flag_age == 1), "\n\n")
+
+# Exclusions & final count for DEXA protocol eligibility
+cat("Excluded: Ineligible for DEXA protocol:   -", sum(nhanes_clean$flag_age == 1 & nhanes_clean$flag_dexa_eligible == 0), "\n")
+cat("---------------------------------------------------------\n")
+
+# Total target eligible subpopulation (Step 2 output)
+cat("TARGET ELIGIBLE SAMPLE (subpop_eligible):  ", sum(nhanes_clean$subpop_eligible == 1), "\n")
+cat("=========================================================\n")
+```
+
+```{r}
+#new nma
+# --- 5. PRINT PHASE 2 COUNTS (MISSINGNESS EXCLUSIONS) ---
+cat("=========================================================\n")
+cat("      PHASE 2: MISSINGNESS EXCLUSION COUNTS             \n")
+cat("=========================================================\n")
+
+# Starting point for Phase 2 (Target Eligible Sample from Step 4)
+cat("Baseline Eligible Sample (subpop_eligible): ", sum(nhanes_clean$subpop_eligible == 1), "\n\n")
+
+#  Missing DEXA BMD Scan Data
+cat("Excluded: Missing valid DEXA scan (DXDSTBMD):  -", sum(nhanes_clean$subpop_eligible == 1 & nhanes_clean$flag_valid_dexa == 0), "\n")
+cat("  Sample with Valid DEXA (subpop):              ", sum(nhanes_clean$subpop == 1), "\n\n")
+
+# Missing Height
+cat("Excluded: Missing standing height (BMXHT):    -", sum(nhanes_clean$flag_valid_dexa == 1 & nhanes_clean$flag_valid_height == 0), "\n")
+cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_height == 1), "\n\n")
+
+#  Missing Screen Time
+cat("Excluded: Missing screen time (TV/computer):   -", sum(nhanes_clean$flag_valid_dexa == 1 & nhanes_clean$flag_valid_screen == 0), "\n")
+cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_screen == 1), "\n\n")
+
+# Missing Food Security
+cat("Excluded: Missing food security (FSDCH):       -", sum(nhanes_clean$flag_valid_screen == 1 & nhanes_clean$flag_valid_fsq == 0), "\n")
+cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_fsq == 1), "\n\n")
+
+# Missing Race / Ethnicity
+cat("Excluded: Missing race/ethnicity (RIDRETH3):   -", sum(nhanes_clean$flag_valid_fsq == 1 & nhanes_clean$flag_valid_race == 0), "\n")
+cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_race == 1), "\n\n")
+
+# Missing Poverty-Income Ratio
+cat("Excluded: Missing poverty-income ratio (PIR):  -", sum(nhanes_clean$flag_valid_race == 1 & nhanes_clean$flag_valid_pir == 0), "\n")
+cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_pir == 1), "\n\n")
+
+# Missing Parent Education
+cat("Excluded: Missing parent education:            -", sum(nhanes_clean$flag_valid_pir == 1 & nhanes_clean$flag_valid_edu == 0), "\n")
+cat("---------------------------------------------------------\n")
+
+# Final Complete-Case Analytic Subpopulation (subpop1)
+cat("FINAL COMPLETE-CASE SAMPLE (subpop1):          ", sum(nhanes_clean$subpop1 == 1), "\n")
+cat("=========================================================\n")
 ```
 
 ```{r}
