@@ -298,6 +298,18 @@ cat("---------------------------------------------------------\n")
 # Final Complete-Case Analytic Subpopulation (subpop1)
 cat("FINAL COMPLETE-CASE SAMPLE (subpop1):          ", sum(nhanes_clean$subpop1 == 1), "\n")
 cat("=========================================================\n")
+
+
+# AFTER DEXA, Screen Time, Height, and Food Security are already validated (flag_valid_fsq == 1), this code gives counts for how many ppl are missing race/eth data, FPL data, and parent ed data
+#race/eth
+sum(nhanes_clean$flag_valid_fsq == 1 & 
+    (is.na(nhanes_clean$RIDRETH3)))
+#FPL
+sum(nhanes_clean$flag_valid_fsq == 1 & 
+    (is.na(nhanes_clean$INDFMPIR)))
+#parent ed
+sum(nhanes_clean$flag_valid_fsq == 1 & 
+    (is.na(nhanes_clean$parent_edu)))
 ```
 
 ```{r}
