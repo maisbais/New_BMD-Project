@@ -3,6 +3,7 @@ title: "Analytic Sample_PartA"
 format: html
 editor: visual
 ---
+
 ```{r}
 # Libraries and definitions
 library(tidyverse)
@@ -80,6 +81,7 @@ tblh_coefs <- read.csv(text = "sex,age_band,intercept,slope
 # 3. Helper function for LMS Z-score calculation
 lms_z <- function(x, L, M, S) ifelse(L != 0, ((x / M)^L - 1) / (L * S), log(x / M) / S)
 ```
+
 ```{r}
 # --- DEMOGRAPHICS (DEMO_H, DEMO_I, DEMO_J) ---
 # 1. Fetch individual cycles
@@ -97,6 +99,7 @@ demo_j <- nhanes('DEMO_J') %>%
 # 2. Stack
 demo_raw <- bind_rows(demo_h, demo_i, demo_j)
 ```
+
 ```{r}
 # --- DEXA / BODY MEASUREMENTS (DXX & BMX) ---
 dexa_raw <- bind_rows(
@@ -111,6 +114,7 @@ bmx_raw <- bind_rows(
   nhanes('BMX_J') %>% select(SEQN, BMXHT)
 )
 ```
+
 ```{r}
 # --- PHYSICAL ACTIVITY & SCREEN TIME (PAQ) ---
 
@@ -137,6 +141,7 @@ paq_j <- full_join(paq_j_youth, paq_j_general, by = "SEQN")
 # --- 3. Stack all 3 cycles cleanly ---
 paq_raw <- bind_rows(paq_h, paq_i, paq_j)
 ```
+
 ```{r}
 # ---FOOD SECURITY (FSQ) ---
 fsq_raw <- bind_rows(
@@ -145,6 +150,7 @@ fsq_raw <- bind_rows(
   nhanes('FSQ_J') %>% select(SEQN, FSDCH)
 )
 ```
+
 ```{r}
 ## -- MERGE TOGETHER -- ##
 master_raw <- demo_raw %>%
@@ -153,6 +159,7 @@ master_raw <- demo_raw %>%
   left_join(paq_raw, by = "SEQN") %>%
   left_join(fsq_raw, by = "SEQN")
 ```
+
 ```{r}
 # ---INITIAL FILTERING & SCREEN TIME CLEANING ---
 # Preserves all N = 29,400 observations per survey estimation rules
@@ -191,6 +198,7 @@ nhanes_clean <- master_raw %>%
     age_band = floor(RIDEXAGM / 12)
   )
 ```
+
 ```{r}
 # --- PRINT FLOW DIAGRAM COUNTS ---
 cat("--- SAMPLE SELECTION FLOW COUNTS ---\n")
@@ -207,6 +215,7 @@ cat("Remaining (Valid Height): ", sum(nhanes_clean$flag_height == 1), "\n\n")
 cat("Excluded: Missing DEXA BMD (DXDSTBMD): ", sum(nhanes_clean$flag_height == 1 & nhanes_clean$flag_bmd == 0), "\n")
 cat("FINAL ANALYTIC SAMPLE (subpop = 1): ", sum(nhanes_clean$subpop == 1), "\n")
 ```
+
 ```{r}
 # ---CALCULATE HEIGHT Z-SCORES (HAZ) ---
 agemos <- nhanes_clean$RIDEXAGM + 0.5
@@ -225,6 +234,7 @@ for (s in c(1, 2)) {
   nhanes_clean$haz[m] <- lms_z(nhanes_clean$BMXHT[m], L, M, S)
 }
 ```
+
 ```{r}
 # --- 9. CALCULATE HEIGHT-ADJUSTED BMD Z-SCORES & SAVE ---
 nhanes_clean <- nhanes_clean %>%
@@ -237,6 +247,7 @@ nhanes_clean <- nhanes_clean %>%
     bmd_zscore_adj = observed_z - predicted_z
   )
 ```
+
 ```{r}
 # Save master dataset locally
 saveRDS(nhanes_clean, file = here("data", "processed", "nhanes_bmd_pediatric_master.rds"))

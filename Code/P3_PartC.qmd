@@ -20,6 +20,7 @@ cat("--- DATASET VERIFICATION ---\n")
 cat("Total Raw Sample Loaded (N): ", nrow(nhanes_clean), "\n")
 cat("Analytic Subpopulation (subpop == 1): ", sum(nhanes_clean$subpop == 1, na.rm = TRUE), "\n")
 ```
+
 ```{r}
 ## Calculated weighted quantiles for exposure
 # Temporary survey design to extract weighted quantiles within subpop
@@ -44,6 +45,7 @@ q25 <- as.numeric(screen_quantiles$total_screen_time[1, "quantile"])
 q50 <- as.numeric(screen_quantiles$total_screen_time[2, "quantile"])
 q75 <- as.numeric(screen_quantiles$total_screen_time[3, "quantile"])
 ```
+
 ```{r}
 ## Factors for Table 1 
 # --- PREPARE FACTORS FOR TABLE 1 ---
@@ -81,6 +83,7 @@ nhanes_table1_prep <- nhanes_clean %>%
     ) %>% factor(levels = c("Low Income (< 130% PIR)", "Middle Income (130-350% PIR)", "High Income (> 350% PIR)"))
   )
 ```
+
 ```{r}
 ## Primary survey design
 nhanes_design_full <- svydesign(
@@ -94,6 +97,7 @@ nhanes_design_full <- svydesign(
 # Isolating analytic subpop
 nhanes_design_sub <- subset(nhanes_design_full, subpop == 1 & !is.na(screen_quartiles))
 ```
+
 ```{r}
 ## TABLE 1 
 # 1. Survey design objects & drop unused factor levels in subpopulation
@@ -157,4 +161,5 @@ tbl_1 <- nhanes_design_sub %>%
   modify_header(label ~ "**Demographic / Clinical Variable**")
 
 tbl_1
+print(tbl_1)
 ```
