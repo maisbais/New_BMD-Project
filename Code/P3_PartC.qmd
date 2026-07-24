@@ -37,7 +37,7 @@ subpop_temp <- subset(temp_design, subpop1 ==1)
 # Extract weighted 25th, 50th, and 75th percentiles of total screen time
 screen_quantiles <- svyquantile(
   ~total_screen_time,
-  design = subpop_design,
+  design = subpop_temp,
   quantiles = c(0.25, 0.50, 0.75),
   na.rm = TRUE
 )
@@ -179,4 +179,135 @@ unweighted_males %>%
     n, 
     percent = percent_row
   )
+```
+
+```{r}
+## Table 1 based on course suggestion ##
+#load libraries
+library(gtsummary)
+library(rstatix)
+library(jtools)
+library(tidyverse)
+library(dplyr)
+library(here)
+library(haven)
+library(psych)
+library(janitor)
+library(survey)
+library(Hmisc)
+
+#recode names of values for FSDCH variable
+table(nhanes_newvars$FSDCH, useNA = "ifany")
+nhanes_newvars <- nhanes_newvars %>%
+  mutate(
+    FSDCH = fct_recode(
+      FSDCH,
+    "High/Marginal Food Security"  = "CH full or marginal food security: 0",
+    "Marginal Food Security"      = "CH marginal food security: 1",
+    "Low Food Security"           = "CH low food security: 2-4",
+    "Very Low Food Security"      = "CH very low food security: 5-8"))
+
+#set levels for FSDCH - high/marginal as ref
+nhanes_newvars <- nhanes_newvars %>%
+  mutate(
+    FSDCH = factor(
+      FSDCH,
+      levels = c(
+        "High/Marginal Food Security",
+        "Marginal Food Security",
+        "Low Food Security",
+        "Very Low Food Security")))
+
+# creating labels for variable names to display on Table 1
+# cannot label the stratification lables or else the code won't work for the Table
+label(nhanes_newvars$RIDRETH3) <- "Race/Ethnicity"
+label(nhanes_newvars$fpl_cat) <- "Household Poverty Income Ratio (PIR)"
+label(nhanes_newvars$parent_edu) <- "Parent Education"
+label(nhanes_newvars$RIDAGEYR) <- "Age"
+label(nhanes_newvars$FSDCH) <- "Food Security Status"
+
+
+#check results
+tabyl(nhanes_newvars, FSDCH)
+
+#establish survey design
+nhanes_design_full <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_newvars)
+
+# Isolating analytic subpop
+subpop_design <- subset(nhanes_design_full, subpop1 == 1)
+
+# Subset designs by sex
+design_males   <- subset(subpop_design, RIAGENDR %in% c("Male", "male", 1))
+design_females <- subset(subpop_design, RIAGENDR %in% c("Female", "female", 2))
+
+#Build table 1 - males
+library(gtsummary)
+library(dplyr)
+
+t1_male <- tbl_svysummary(
+  data = design_males,
+  by = screen_quart,
+  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  missing = "no",
+  statistic = list(
+    all_continuous() ~ "{mean} ({mean.std.error})", # using Mean and SE for all contin vars
+    all_categorical() ~ "{n_unweighted} ({p}%)") # using unweighted counts and wtd % for all cat vars
+  ) %>%
+  add_n("{N_miss_unweighted} ({p_miss})") %>% # adding a column for Missing unwtd counts and wtdN(these are not variables; they are part of the function) %
+  modify_header(n ~ "**Missing n (%)**") %>% #creating the label for the header of Missing
+  modify_spanning_header(all_stat_cols() ~ "**TBLH BMD Z-score Quartile**") %>%  #labeling the stratification var
+  modify_header(stat_1 ~ "**Q1**<br>N = {n_unweighted}") %>% #labeling strat columns & getting unwted n
+  modify_header(stat_2 ~ "**Q2**<br>N = {n_unweighted}") %>%
+  modify_header(stat_3 ~ "**Q3**<br>N = {n_unweighted}") %>%
+  modify_header(stat_4 ~ "**Q4**<br>N = {n_unweighted}") %>%
+  modify_caption(caption = "Table 1. NHANES 2013-2018 distribution of characteristics among U.S male children 8 to 17 years of age (n = 2,044) according to quartiles of average daily screen time ") %>%
+  #remove default footnote and superscript
+modify_footnote(all_stat_cols() ~ NA) %>%
+  as_gt() %>%
+  gt::tab_source_note(
+    source_note = "Weighted percentages and unweighted sample counts shown. Abbreviations: NHANES, National Health and Nutrition Examination Survey; SE, Standard Error; PIR, Poverty Income Ratio; TBLH, Total Body Less Head; BMD, Bone Mineral Density."
+  )
+
+t1_male
+```
+
+```{r}
+#Build table 1 - females
+
+t1_female <- tbl_svysummary(
+  data = design_females,
+  by = screen_quart,
+  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  missing = "no",
+  statistic = list(
+    all_continuous() ~ "{mean} ({mean.std.error})", # using Mean and SE for all contin vars
+    all_categorical() ~ "{n_unweighted} ({p}%)") # using unweighted counts and wtd % for all cat vars
+  ) %>%
+  add_n("{N_miss_unweighted} ({p_miss})") %>% # adding a column for Missing unwtd counts and wtdN(these are not variables; they are part of the function) %
+  modify_header(n ~ "**Missing n (%)**") %>% #creating the label for the header of Missing
+  modify_spanning_header(all_stat_cols() ~ "**TBLH BMD Z-score Quartile**") %>%  #labeling the stratification var
+  modify_header(stat_1 ~ "**Q1**<br>N = {n_unweighted}") %>% #labeling strat columns & getting unwted n
+  modify_header(stat_2 ~ "**Q2**<br>N = {n_unweighted}") %>%
+  modify_header(stat_3 ~ "**Q3**<br>N = {n_unweighted}") %>%
+  modify_header(stat_4 ~ "**Q4**<br>N = {n_unweighted}") %>%
+  modify_caption(caption = "Table 1. NHANES 2013-2018 distribution of characteristics among U.S female children 8 to 17 years of age (n = 1,953) according to quartiles of average daily screen time ") %>%
+  #remove default footnote and superscript
+modify_footnote(all_stat_cols() ~ NA) %>%
+  as_gt() %>%
+  gt::tab_source_note(
+    source_note = "Weighted percentages and unweighted sample counts shown. Abbreviations: NHANES, National Health and Nutrition Examination Survey; SE, Standard Error; PIR, Poverty Income Ratio; TBLH, Total Body Less Head; BMD, Bone Mineral Density."
+  )
+
+t1_female
+```
+
+```{r}
+## Save table 1 ##
+gt::gtsave(t1_male, filename = "Table1_Males.docx") #save male as word doc
+gt::gtsave(t1_female, filename = "Table1_Females.docx") #save male as word doc
 ```
