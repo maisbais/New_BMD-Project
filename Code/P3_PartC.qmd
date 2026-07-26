@@ -271,10 +271,10 @@ t1_male_comb <- tbl_svysummary(
 ) %>%
   #add_n("{N_miss_unweighted} ({p_miss})") %>%
  # modify_header(n ~ "**Missing n (%)**") %>%
-  modify_header(stat_1 ~ "**Q1**<br>N = {n_unweighted}") %>%
-  modify_header(stat_2 ~ "**Q2**<br>N = {n_unweighted}") %>%
-  modify_header(stat_3 ~ "**Q3**<br>N = {n_unweighted}") %>%
-  modify_header(stat_4 ~ "**Q4**<br>N = {n_unweighted}") %>%
+  modify_header(stat_1 ~ "**Q1**<br>(&le; 4 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_2 ~ "**Q2** <br>(> 4 hours to &le; 6 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_3 ~ "**Q3**<br>(> 6 hours to &le; 9 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_4 ~ "**Q4** <br>(> 9 hours)<br>N = {n_unweighted}") %>%
   modify_footnote(all_stat_cols() ~ NA)
 
 t1_male_comb
@@ -292,10 +292,10 @@ t1_female_comb <- tbl_svysummary(
 ) %>%
  # add_n("{N_miss_unweighted} ({p_miss})") %>%
  # modify_header(n ~ "**Missing n (%)**") %>%
-  modify_header(stat_1 ~ "**Q1**<br>N = {n_unweighted}") %>%
-  modify_header(stat_2 ~ "**Q2**<br>N = {n_unweighted}") %>%
-  modify_header(stat_3 ~ "**Q3**<br>N = {n_unweighted}") %>%
-  modify_header(stat_4 ~ "**Q4**<br>N = {n_unweighted}") %>%
+  modify_header(stat_1 ~ "**Q1**<br>(&le; 4 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_2 ~ "**Q2** <br>(> 4 hours to &le; 6 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_3 ~ "**Q3**<br>(> 6 hours to &le; 9 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_4 ~ "**Q4** <br>(> 9 hours)<br>N = {n_unweighted}") %>%
   modify_footnote(all_stat_cols() ~ NA)
 
 t1_female_comb
