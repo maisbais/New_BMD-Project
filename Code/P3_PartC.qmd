@@ -113,6 +113,21 @@ svyciprop(~I(bmd_z_cat == "Low TBLH BMD"),
           design=subpop_design,
           method = "logit",
           level = 0.95)
+
+
+## Mean & Central Tendency ## 
+#Estimate the mean and central tendency of BMD correcting for stratified sampling and survey weights. 
+## correcting for stratified sampling and survey weights
+svymean(~bmd_zscore_adj, design = subpop_design)
+
+
+#Estimating the mean and central tendency of BMD by screen time quartiles
+svyby(formula = ~bmd_zscore_adj, 
+      by = ~factor(screen_quart), 
+      design = subpop_design, 
+      FUN = svymean, 
+      keep.var = TRUE)
+
 ```
 
 ```{r}
