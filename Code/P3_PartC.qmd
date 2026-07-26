@@ -107,13 +107,22 @@ subpop_design <- subset(nhanes_design_full, subpop1 == 1)
 ```
 
 ```{r}
-## Prevalence Estiimate ##
+## Prevalence Estimate ##
 #Estimate prevalence of low BMD (defined as z score less than -2.0) using weighted estimates
 svyciprop(~I(bmd_z_cat == "Low TBLH BMD"),
           design=subpop_design,
           method = "logit",
           level = 0.95)
 
+#Estimate prevalence and confidence intervals by gender
+gender_prev <- svyby(formula = ~I(bmd_z_cat == "Low TBLH BMD"),
+  by = ~RIAGENDR,
+  design = subpop_design,
+  FUN = svyciprop,
+  method = "logit",
+  level = 0.95)
+
+confint(gender_prev)
 
 ## Mean & Central Tendency ## 
 #Estimate the mean and central tendency of BMD correcting for stratified sampling and survey weights. 
@@ -127,6 +136,20 @@ svyby(formula = ~bmd_zscore_adj,
       design = subpop_design, 
       FUN = svymean, 
       keep.var = TRUE)
+
+#Estimating the mean and central tendency of BMD by screen time quartiles & SEX
+svyby(formula = ~bmd_zscore_adj, 
+      by = ~factor(screen_quart), 
+      design = subset(subpop_design, RIAGENDR =="Male"), # by sex male
+      FUN = svymean, 
+      keep.var = TRUE)
+
+svyby(formula = ~bmd_zscore_adj, 
+      by = ~factor(screen_quart), 
+      design = subset(subpop_design, RIAGENDR =="Female"), # by sex female
+      FUN = svymean, 
+      keep.var = TRUE)
+
 
 ```
 
