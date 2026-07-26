@@ -83,7 +83,7 @@ lms_z <- function(x, L, M, S) ifelse(L != 0, ((x / M)^L - 1) / (L * S), log(x / 
 ```
 
 ```{r}
-# --- DEMOGRAPHICS (DEMO_H, DEMO_I, DEMO_J) ---
+## DEMOGRAPHICS (DEMO_H, DEMO_I, DEMO_J) ##
 # 1. Fetch individual cycles
 demo_h <- nhanes('DEMO_H') %>% 
   select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
@@ -100,7 +100,7 @@ demo_raw <- bind_rows(demo_h, demo_i, demo_j)
 ```
 
 ```{r}
-# --- DEXA / BODY MEASUREMENTS (DXX & BMX) ---
+## DEXA / BODY MEASUREMENTS (DXX & BMX) ##
 dexa_raw <- bind_rows(
   nhanes('DXX_H') %>% select(SEQN, DXDSTBMD),
   nhanes('DXX_I') %>% select(SEQN, DXDSTBMD),
@@ -115,7 +115,7 @@ bmx_raw <- bind_rows(
 ```
 
 ```{r}
-# --- PHYSICAL ACTIVITY & SCREEN TIME (PAQ) ---
+## PHYSICAL ACTIVITY & SCREEN TIME (PAQ) ##
 
 # Cycles H (2013-14) and I (2015-16)
 # All PA and screen time questions are inside PAQ_H and PAQ_I
@@ -142,7 +142,7 @@ paq_raw <- bind_rows(paq_h, paq_i, paq_j)
 ```
 
 ```{r}
-# ---FOOD SECURITY (FSQ) ---
+## FOOD SECURITY (FSQ) ##
 fsq_raw <- bind_rows(
   nhanes('FSQ_H') %>% select(SEQN, FSDCH),
   nhanes('FSQ_I') %>% select(SEQN, FSDCH),
@@ -151,7 +151,7 @@ fsq_raw <- bind_rows(
 ```
 
 ```{r}
-## -- MERGE TOGETHER -- ##
+## MERGE TOGETHER ##
 master_raw <- demo_raw %>%
   left_join(dexa_raw, by = "SEQN") %>%
   left_join(bmx_raw, by = "SEQN") %>%
@@ -160,7 +160,7 @@ master_raw <- demo_raw %>%
 ```
 
 ```{r}
-# ---step 1. INITIAL FILTERING & SCREEN TIME CLEANING ---
+## step 1. INITIAL FILTERING & SCREEN TIME CLEANING ##
 # Preserves all N = 29,400 observations per survey estimation rules
 nhanes_clean <- master_raw %>%
   mutate(
@@ -197,7 +197,7 @@ nhanes_clean <- master_raw %>%
 ```
 
 ```{r}
-# --- Step 2. PHASE 1: PROTOCOL ELIGIBILITY ---
+## Step 2. PHASE 1: PROTOCOL ELIGIBILITY ##
 nhanes_clean <- nhanes_clean %>%
   mutate(
     # verifies participant attended a MEC exam (has a valid exam age and a positive MEC weight)
@@ -214,7 +214,7 @@ subpop_eligible = ifelse(flag_dexa_eligible == 1, 1, 0))
 ```
 
 ```{r}
-# --- Step 3. PHASE 2: MISSINGNESS EXCLUSIONS ---
+## Step 3. PHASE 2: MISSINGNESS EXCLUSIONS ##
 nhanes_clean <- nhanes_clean %>%
   mutate(
     # Starts from eligible sample (subpop_eligible == 1) and removes missing/invalid DEXA scans
@@ -246,7 +246,7 @@ nhanes_clean <- nhanes_clean %>%
 ```
 
 ```{r}
-# --- Step 4. PRINT PHASE 1 COUNTS (ELIGIBILITY) ---
+## Step 4. PRINT PHASE 1 COUNTS (eligibility) ##
 cat("=========================================================\n")
 cat("      PHASE 1: PROTOCOL ELIGIBILITY COUNTS              \n")
 cat("=========================================================\n")
@@ -272,48 +272,55 @@ cat("=========================================================\n")
 ```
 
 ```{r}
-# --- 5. PRINT PHASE 2 COUNTS (MISSINGNESS EXCLUSIONS) ---
-cat("=========================================================\n")
-cat("      PHASE 2: MISSINGNESS EXCLUSION COUNTS             \n")
-cat("=========================================================\n")
+## step by step exclusion counts for flow diagram ##
 
-# Starting point for Phase 2 (Target Eligible Sample from Step 4)
-cat("Baseline Eligible Sample (subpop_eligible): ", sum(nhanes_clean$subpop_eligible == 1), "\n\n")
+# Starting pool: Target Eligible Sample (subpop_eligible)
+step0_eligible <- nhanes_clean %>% filter(subpop_eligible == 1) # N = 5347
 
-#  Missing DEXA BMD Scan Data
-cat("Excluded: Missing valid DEXA scan (DXDSTBMD):  -", sum(nhanes_clean$subpop_eligible == 1 & nhanes_clean$flag_valid_dexa == 0), "\n")
-cat("  Sample with Valid DEXA (subpop):              ", sum(nhanes_clean$subpop == 1), "\n\n")
+# Step 1: Missing DEXA
+excl_dexa <- step0_eligible %>% filter(is.na(DXDSTBMD))
+step1_dexa <- step0_eligible %>% filter(!is.na(DXDSTBMD))
 
-# Missing Height
-cat("Excluded: Missing standing height (BMXHT):    -", sum(nhanes_clean$flag_valid_dexa == 1 & nhanes_clean$flag_valid_height == 0), "\n")
-cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_height == 1), "\n\n")
+# Step 2: Missing Height 
+excl_height <- step1_dexa %>% filter(is.na(BMXHT))
+step2_height <- step1_dexa %>% filter(!is.na(BMXHT))
 
-#  Missing Screen Time
-cat("Excluded: Missing screen time (TV/computer):   -", sum(nhanes_clean$flag_valid_dexa == 1 & nhanes_clean$flag_valid_screen == 0), "\n")
-cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_screen == 1), "\n\n")
+# Step 3: Missing Screen Time  
+excl_screen <- step2_height %>% filter(is.na(total_screen_time))
+step3_screen <- step2_height %>% filter(!is.na(total_screen_time))
 
-# Missing Food Security
-cat("Excluded: Missing food security (FSDCH):       -", sum(nhanes_clean$flag_valid_screen == 1 & nhanes_clean$flag_valid_fsq == 0), "\n")
-cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_fsq == 1), "\n\n")
+# Step 4: Missing Food Security  
+excl_fsq <- step3_screen %>% filter(is.na(FSDCH))
+step4_fsq <- step3_screen %>% filter(!is.na(FSDCH))
 
-# Missing Race / Ethnicity
-cat("Excluded: Missing race/ethnicity (RIDRETH3):   -", sum(nhanes_clean$flag_valid_fsq == 1 & nhanes_clean$flag_valid_race == 0), "\n")
-cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_race == 1), "\n\n")
+# Step 5: Missing Race/Ethnicity  
+excl_race <- step4_fsq %>% filter(is.na(RIDRETH3))
+step5_race <- step4_fsq %>% filter(!is.na(RIDRETH3))
 
-# Missing Poverty-Income Ratio
-cat("Excluded: Missing poverty-income ratio (PIR):  -", sum(nhanes_clean$flag_valid_race == 1 & nhanes_clean$flag_valid_pir == 0), "\n")
-cat("  Remaining Sample:                             ", sum(nhanes_clean$flag_valid_pir == 1), "\n\n")
+# Step 6: Missing PIR 
+excl_pir <- step5_race %>% filter(is.na(INDFMPIR))
+step6_pir <- step5_race %>% filter(!is.na(INDFMPIR))
 
-# Missing Parent Education
-cat("Excluded: Missing parent education:            -", sum(nhanes_clean$flag_valid_pir == 1 & nhanes_clean$flag_valid_edu == 0), "\n")
-cat("---------------------------------------------------------\n")
+# Step 7: Missing Parent Education 
+excl_edu <- step6_pir %>% filter(is.na(parent_edu))
+step7_final <- step6_pir %>% filter(!is.na(parent_edu)) # Should equal 3997!
 
-# Final Complete-Case Analytic Subpopulation (subpop1)
-cat("FINAL COMPLETE-CASE SAMPLE (subpop1):          ", sum(nhanes_clean$subpop1 == 1), "\n")
-cat("=========================================================\n")
+# Print the waterfall subtractions
+cat("Step 1 Excluded (DEXA):", nrow(excl_dexa), "\n")
+cat("Step 2 Excluded (Height):", nrow(excl_height), "\n")
+cat("Step 3 Excluded (Screen Time):", nrow(excl_screen), "\n")
+cat("Step 4 Excluded (Food Security):", nrow(excl_fsq), "\n")
+cat("Step 5 Excluded (Race):", nrow(excl_race), "\n")
+cat("Step 6 Excluded (PIR):", nrow(excl_pir), "\n")
+cat("Step 7 Excluded (Education):", nrow(excl_edu), "\n")
 
+total_exclusions <- nrow(excl_dexa) + nrow(excl_height) + nrow(excl_screen) + 
+                   nrow(excl_fsq) + nrow(excl_race) + nrow(excl_pir) + nrow(excl_edu)
 
-# AFTER DEXA, Screen Time, Height, and Food Security are already validated (flag_valid_fsq == 1), this code gives counts for how many ppl are missing race/eth data, FPL data, and parent ed data
+cat("TOTAL EXCLUSIONS:", total_exclusions, "\n")  
+cat("REMAINING ANALYTIC SAMPLE:", nrow(step7_final), "\n")  
+
+#after DEXA, Screen Time, Height, and Food Security are already validated (flag_valid_fsq == 1), this code gives counts for how many ppl are missing race/eth data, FPL data, and parent ed data (ie. not mutually exclusive)
 #race/eth
 sum(nhanes_clean$flag_valid_fsq == 1 & 
     (is.na(nhanes_clean$RIDRETH3)))
@@ -323,11 +330,10 @@ sum(nhanes_clean$flag_valid_fsq == 1 &
 #parent ed
 sum(nhanes_clean$flag_valid_fsq == 1 & 
     (is.na(nhanes_clean$parent_edu)))
-
 ```
 
 ```{r}
-# ---CALCULATE HEIGHT Z-SCORES (HAZ) ---
+## CALCULATE HEIGHT Z-SCORES (HAZ) ##
 agemos <- nhanes_clean$RIDEXAGM + 0.5
 nhanes_clean$haz <- NA_real_
 
@@ -346,7 +352,7 @@ for (s in c(1, 2)) {
 ```
 
 ```{r}
-# --- CALCULATE HEIGHT-ADJUSTED BMD Z-SCORES & SAVE ---
+## CALCULATE HEIGHT-ADJUSTED BMD Z-SCORES & SAVE ##
 nhanes_clean <- nhanes_clean %>%
   mutate(sex = as.numeric(RIAGENDR)) %>%
   left_join(tblh_coefs, by = c("sex", "age_band")) %>%

@@ -241,7 +241,7 @@ t1_female
 ```
 
 ```{r}
-## Make combined table one stratified by screen time quartiles AND sex ##
+## Make combined table 1 stratified by screen time quartiles AND sex ##
 
 #make male table to combine
 t1_male_comb <- tbl_svysummary(
@@ -301,7 +301,7 @@ t1_combined
 ```
 
 ```{r}
-## Save table 1 ##
+## Save table 1's ##
 gt::gtsave(t1_male, filename = "Table1_Males.docx") #save male as word doc
 gt::gtsave(t1_female, filename = "Table1_Females.docx") #save male as word doc
 gt::gtsave(t1_combined, filename = "Table1_Combined.docx") #save combined as word doc
@@ -310,6 +310,60 @@ gt::gtsave(t1_combined, filename = "Table1_Combined.docx") #save combined as wor
 gt::gtsave(t1_male, filename = "Table1_Males.png") #save male as png
 gt::gtsave(t1_female, filename = "Table1_Females.png") #save female as png
 gt::gtsave(t1_combined, filename = "Table1_Combined.png") #save combined as png
+```
+
+```{r}
+## Assess Missingness ##
+# Variables needed for anal.
+req_vars <- c("RIDAGEYR", "RIDRETH3", "fpl_cat", "parent_edu", "FSDCH", "screen_quart", "DXDSTBMD", "BMXHT")
+
+# Filter to subpop_eligible == 1 
+eval_missing_data <- nhanes_newvars %>%
+  filter(subpop_eligible == 1) %>% 
+  mutate(
+    analytic_status = ifelse(
+      subpop1 == 1, 
+      "Analytic Sample (Included)", 
+      "Missing Data (Excluded)"))
+
+# Create Survey Design Object for new eval_missing_data daataset
+design_missing_eval <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,  
+  nest = TRUE,
+  data = eval_missing_data)
+
+# Generate descriptive table
+table_missingness <- tbl_svysummary(
+  data = design_missing_eval,
+  by = analytic_status,
+  include = c(RIDAGEYR, RIAGENDR, RIDRETH3, fpl_cat, parent_edu, FSDCH, BMXHT, screen_quart),
+  statistic = list(
+    all_continuous()  ~ "{mean} ({mean.std.error})",
+    all_categorical() ~ "{n_unweighted} ({p}%)"
+  ),
+  missing = "no"
+) %>%
+  add_p() %>%
+  modify_header(stat_1 ~ "**Analytic Sample (Included)**<br>n = {n_unweighted}") %>%
+  modify_header(stat_2 ~ "**Missing Data (Excluded)**<br>n = {n_unweighted}") %>%
+  modify_header(label ~ "**Characteristic**") %>%
+  modify_spanning_header(all_stat_cols() ~ "**Inclusion Status**") %>%
+  modify_caption(
+    caption = "Descriptive Comparison of Eligible Participants Included in Analytic Sample vs. Excluded Due to Missing Data"
+  ) %>%
+  modify_footnote(all_stat_cols() ~ NA) %>%
+  as_gt() %>%
+  gt::tab_source_note(
+    source_note = "Continuous variables presented as weighted Mean (SE); categorical variables presented as unweighted n (weighted %). P-values calculated using design-adjusted Chi-square tests and t-tests."
+  )
+
+table_missingness
+
+#save table_missingness
+gt::gtsave(table_missingness, filename = "table_missingness.docx") #save combined as word doc
+gt::gtsave(table_missingness, filename = "table_missingness.png") #save male as png
 ```
 
 Old code for making table 1. Can prob delete, but saving just in case for now.
