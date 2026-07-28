@@ -70,11 +70,13 @@ table(nhanes_newvars$screen_quart[nhanes_newvars$subpop1 == 1], useNA = "always"
 nhanes_newvars <- nhanes_newvars %>%
   mutate(
     fpl_cat = case_when(
-      INDFMPIR < 1.30 ~ "Low Income (< 130% PIR)",
-      INDFMPIR >= 1.30 & INDFMPIR <= 3.50 ~ "Middle Income (130-350% PIR)",
+      INDFMPIR < 1.00 ~ "Poverty (< 100% PIR)",
+      INDFMPIR >= 1.00 & INDFMPIR <= 1.30 ~ "Near Poverty (100-130% PIR)",
+      INDFMPIR >= 1.31 & INDFMPIR < 2.00 ~ "Low-Middle Income (131-199% PIR)",
+      INDFMPIR >= 2.00 & INDFMPIR <= 3.50 ~ "High-Middle Income (200-350% PIR)",
       INDFMPIR > 3.50 ~ "High Income (> 350% PIR)",
       .default = NA_character_
-    ) %>% factor(levels = c("Low Income (< 130% PIR)", "Middle Income (130-350% PIR)", "High Income (> 350% PIR)")))
+    ) %>% factor(levels = c("Poverty (< 100% PIR)", "Near Poverty (100-130% PIR)", "Low-Middle Income (131-199% PIR)", "High-Middle Income (200-350% PIR)", "High Income (> 350% PIR)")))
 
 # check to make sure no missing values for z scores 
 sum(nhanes_clean$subpop1 == 1 & is.na(nhanes_clean$bmd_zscore_adj))
@@ -89,7 +91,7 @@ nhanes_newvars <- nhanes_newvars %>%
 
 #confirm factors in nhanes_newvars
 nhanes_newvars %>% 
-  select(RIAGENDR, RIDRETH3, fpl_cat, screen_quart, bmd_z_cat, FSDCH) %>% 
+  select(RIAGENDR, RIDRETH3, fpl_cat, screen_quart, bmd_z_cat, FSDCH, INDFMPIR) %>% 
   glimpse()
 ```
 
@@ -169,26 +171,30 @@ library(survey)
 library(Hmisc)
 
 #recode names of values for FSDCH variable
-table(nhanes_newvars$FSDCH, useNA = "ifany")
 nhanes_newvars <- nhanes_newvars %>%
   mutate(
-    FSDCH = fct_recode(
+    fsdch_2cat = fct_collapse(
       FSDCH,
-    "High/Marginal Food Security"  = "CH full or marginal food security: 0",
-    "Marginal Food Security"      = "CH marginal food security: 1",
-    "Low Food Security"           = "CH low food security: 2-4",
-    "Very Low Food Security"      = "CH very low food security: 5-8"))
+      "High/Marginal Food Security" = c(
+        "CH full or marginal food security: 0", 
+        "CH marginal food security: 1"),
+      "Low/Very Low Food Security" = c(
+        "CH low food security: 2-4", 
+        "CH very low food security: 5-8")))
 
-#set levels for FSDCH - high/marginal as ref
+#set levels for fsdch_2cat - high/marginal as ref
 nhanes_newvars <- nhanes_newvars %>%
   mutate(
-    FSDCH = factor(
-      FSDCH,
+    fsdch_2cat = factor(
+      fsdch_2cat,
       levels = c(
         "High/Marginal Food Security",
-        "Marginal Food Security",
-        "Low Food Security",
-        "Very Low Food Security")))
+        "Low/Very Low Food Security")))
+
+# Verify the recode worked
+table(nhanes_newvars$fsdch_2cat, useNA = "ifany")
+table(nhanes_newvars$FSDCH, useNA = "ifany")
+
 
 # creating labels for variable names to display on Table 1
 # cannot label the stratification lables or else the code won't work for the Table
@@ -196,11 +202,11 @@ label(nhanes_newvars$RIDRETH3) <- "Race/Ethnicity"
 label(nhanes_newvars$fpl_cat) <- "Household Poverty Income Ratio (PIR)"
 label(nhanes_newvars$parent_edu) <- "Parent Education"
 label(nhanes_newvars$RIDAGEYR) <- "Age"
-label(nhanes_newvars$FSDCH) <- "Food Security Status"
+label(nhanes_newvars$fsdch_2cat) <- "Food Security Status"
 
 
 #check results
-tabyl(nhanes_newvars, FSDCH)
+tabyl(nhanes_newvars, fsdch_2cat)
 
 #establish survey design
 nhanes_design_full <- svydesign(
@@ -224,7 +230,7 @@ library(dplyr)
 t1_male <- tbl_svysummary(
   data = design_males,
   by = screen_quart,
-  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     all_continuous() ~ "{mean} ({mean.std.error})", # using Mean and SE for all contin vars
@@ -254,7 +260,7 @@ t1_male
 t1_female <- tbl_svysummary(
   data = design_females,
   by = screen_quart,
-  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     all_continuous() ~ "{mean} ({mean.std.error})", # using Mean and SE for all contin vars
@@ -285,7 +291,7 @@ t1_female
 t1_male_comb <- tbl_svysummary(
   data = design_males,
   by = screen_quart,
-  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     all_continuous()  ~ "{mean} ({mean.std.error})",
@@ -306,7 +312,7 @@ t1_male_comb
 t1_female_comb <- tbl_svysummary(
   data = design_females,
   by = screen_quart,
-  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     all_continuous()  ~ "{mean} ({mean.std.error})",
@@ -353,7 +359,7 @@ gt::gtsave(t1_combined, filename = "Table1_Combined.png") #save combined as png
 ```{r}
 ## Assess Missingness ##
 # Variables needed for anal.
-req_vars <- c("RIDAGEYR", "RIDRETH3", "fpl_cat", "parent_edu", "FSDCH", "screen_quart", "DXDSTBMD", "BMXHT")
+req_vars <- c("RIDAGEYR", "RIDRETH3", "fpl_cat", "parent_edu", "fsdch_2cat", "screen_quart", "DXDSTBMD", "BMXHT")
 
 # Filter to subpop_eligible == 1 
 eval_missing_data <- nhanes_newvars %>%
@@ -376,7 +382,7 @@ design_missing_eval <- svydesign(
 table_missingness <- tbl_svysummary(
   data = design_missing_eval,
   by = analytic_status,
-  include = c(RIDAGEYR, RIAGENDR, RIDRETH3, fpl_cat, parent_edu, FSDCH, BMXHT, screen_quart),
+  include = c(RIDAGEYR, RIAGENDR, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat, BMXHT, screen_quart),
   statistic = list(
     all_continuous()  ~ "{mean} ({mean.std.error})",
     all_categorical() ~ "{n_unweighted} ({p}%)"
