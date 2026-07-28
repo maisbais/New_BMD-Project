@@ -70,11 +70,22 @@ table(nhanes_newvars$screen_quart[nhanes_newvars$subpop1 == 1], useNA = "always"
 nhanes_newvars <- nhanes_newvars %>%
   mutate(
     fpl_cat = case_when(
-      INDFMPIR < 1.30 ~ "Low Income (< 130% PIR)",
-      INDFMPIR >= 1.30 & INDFMPIR <= 3.50 ~ "Middle Income (130-350% PIR)",
+      INDFMPIR < 1.00 ~ "Poverty (< 100% PIR)",
+      INDFMPIR >= 1.00 & INDFMPIR <= 1.30 ~ "Near Poverty (100-130% PIR)",
+      INDFMPIR >= 1.31 & INDFMPIR < 2.00 ~ "Low-Middle Income (131-199% PIR)",
+      INDFMPIR >= 2.00 & INDFMPIR <= 3.50 ~ "High-Middle Income (200-350% PIR)",
       INDFMPIR > 3.50 ~ "High Income (> 350% PIR)",
       .default = NA_character_
-    ) %>% factor(levels = c("Low Income (< 130% PIR)", "Middle Income (130-350% PIR)", "High Income (> 350% PIR)")))
+    ) %>% factor(levels = c("Poverty (< 100% PIR)", "Near Poverty (100-130% PIR)", "Low-Middle Income (131-199% PIR)", "High-Middle Income (200-350% PIR)", "High Income (> 350% PIR)")))
+
+#create new categorical age var for T1
+nhanes_newvars <- nhanes_newvars %>%
+  mutate(
+    age_cat = case_when(
+      RIDAGEYR >= 8  & RIDAGEYR < 13  ~ "8–12 years",
+      RIDAGEYR >= 13 & RIDAGEYR <= 17 ~ "12–17 years",
+      TRUE ~ NA_character_
+    ) %>% factor(levels = c("8–12 years", "12–17 years")))
 
 # check to make sure no missing values for z scores 
 sum(nhanes_clean$subpop1 == 1 & is.na(nhanes_clean$bmd_zscore_adj))
@@ -89,7 +100,7 @@ nhanes_newvars <- nhanes_newvars %>%
 
 #confirm factors in nhanes_newvars
 nhanes_newvars %>% 
-  select(RIAGENDR, RIDRETH3, fpl_cat, screen_quart, bmd_z_cat, FSDCH) %>% 
+  select(RIAGENDR, RIDRETH3, fpl_cat, screen_quart, bmd_z_cat, FSDCH, INDFMPIR, age_cat) %>% 
   glimpse()
 ```
 
@@ -169,38 +180,43 @@ library(survey)
 library(Hmisc)
 
 #recode names of values for FSDCH variable
-table(nhanes_newvars$FSDCH, useNA = "ifany")
 nhanes_newvars <- nhanes_newvars %>%
   mutate(
-    FSDCH = fct_recode(
+    fsdch_2cat = fct_collapse(
       FSDCH,
-    "High/Marginal Food Security"  = "CH full or marginal food security: 0",
-    "Marginal Food Security"      = "CH marginal food security: 1",
-    "Low Food Security"           = "CH low food security: 2-4",
-    "Very Low Food Security"      = "CH very low food security: 5-8"))
+      "High/Marginal Food Security" = c(
+        "CH full or marginal food security: 0", 
+        "CH marginal food security: 1"),
+      "Low/Very Low Food Security" = c(
+        "CH low food security: 2-4", 
+        "CH very low food security: 5-8")))
 
-#set levels for FSDCH - high/marginal as ref
+#set levels for fsdch_2cat - high/marginal as ref
 nhanes_newvars <- nhanes_newvars %>%
   mutate(
-    FSDCH = factor(
-      FSDCH,
+    fsdch_2cat = factor(
+      fsdch_2cat,
       levels = c(
         "High/Marginal Food Security",
-        "Marginal Food Security",
-        "Low Food Security",
-        "Very Low Food Security")))
+        "Low/Very Low Food Security")))
+
+# Verify the recode worked
+table(nhanes_newvars$fsdch_2cat, useNA = "ifany")
+table(nhanes_newvars$FSDCH, useNA = "ifany")
+
 
 # creating labels for variable names to display on Table 1
 # cannot label the stratification lables or else the code won't work for the Table
 label(nhanes_newvars$RIDRETH3) <- "Race/Ethnicity"
 label(nhanes_newvars$fpl_cat) <- "Household Poverty Income Ratio (PIR)"
 label(nhanes_newvars$parent_edu) <- "Parent Education"
-label(nhanes_newvars$RIDAGEYR) <- "Age"
-label(nhanes_newvars$FSDCH) <- "Food Security Status"
+label(nhanes_newvars$RIDAGEYR) <- "Age (Years)"
+label(nhanes_newvars$fsdch_2cat) <- "Food Security Status"
+label(nhanes_newvars$age_cat) <- "Age Group"
 
 
 #check results
-tabyl(nhanes_newvars, FSDCH)
+tabyl(nhanes_newvars, fsdch_2cat)
 
 #establish survey design
 nhanes_design_full <- svydesign(
@@ -224,7 +240,7 @@ library(dplyr)
 t1_male <- tbl_svysummary(
   data = design_males,
   by = screen_quart,
-  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     all_continuous() ~ "{mean} ({mean.std.error})", # using Mean and SE for all contin vars
@@ -254,7 +270,7 @@ t1_male
 t1_female <- tbl_svysummary(
   data = design_females,
   by = screen_quart,
-  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat, age_cat),
   missing = "no",
   statistic = list(
     all_continuous() ~ "{mean} ({mean.std.error})", # using Mean and SE for all contin vars
@@ -280,50 +296,57 @@ t1_female
 
 ```{r}
 ## Make combined table 1 stratified by screen time quartiles AND sex ##
-
-#make male table to combine
+# Male Table to combine
 t1_male_comb <- tbl_svysummary(
   data = design_males,
   by = screen_quart,
-  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
+    total_screen_time ~ "{mean} ({mean.std.error})",
     all_continuous()  ~ "{mean} ({mean.std.error})",
     all_categorical() ~ "{n_unweighted} ({p}%)"
+  ),
+  digits = list(
+    all_categorical() ~ c(0, 1),  
+    all_continuous()  ~ c(2, 2)
+  ),
+  label = list(
+    total_screen_time ~ "Screen Time (Hours/Day)"
   )
 ) %>%
-  #add_n("{N_miss_unweighted} ({p_miss})") %>%
- # modify_header(n ~ "**Missing n (%)**") %>%
-  modify_header(stat_1 ~ "**Q1**<br>(&le; 4 hours)<br>N = {n_unweighted}") %>%
-  modify_header(stat_2 ~ "**Q2** <br>(> 4 hours to &le; 6 hours)<br>N = {n_unweighted}") %>%
-  modify_header(stat_3 ~ "**Q3**<br>(> 6 hours to &le; 9 hours)<br>N = {n_unweighted}") %>%
-  modify_header(stat_4 ~ "**Q4** <br>(> 9 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_1 ~ "**Q1**<br>(&le; 4 hours)<br>N = {n_unweighted} ({style_number(p * 100, digits = 1)}%)") %>%
+  modify_header(stat_2 ~ "**Q2**<br>(> 4 hours to &le; 6 hours)<br>N = {n_unweighted} ({style_number(p * 100, digits = 1)}%)") %>%
+  modify_header(stat_3 ~ "**Q3**<br>(> 6 hours to &le; 9 hours)<br>N = {n_unweighted} ({style_number(p * 100, digits = 1)}%)") %>%
+  modify_header(stat_4 ~ "**Q4**<br>(> 9 hours)<br>N = {n_unweighted} ({style_number(p * 100, digits = 1)}%)") %>%
   modify_footnote(all_stat_cols() ~ NA)
 
-t1_male_comb
-
-#make female table to combine
+# Female Table to combine
 t1_female_comb <- tbl_svysummary(
   data = design_females,
   by = screen_quart,
-  include = c(RIDAGEYR, RIDRETH3, fpl_cat, parent_edu, FSDCH),
+  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
+    total_screen_time ~ "{mean} ({mean.std.error})",
     all_continuous()  ~ "{mean} ({mean.std.error})",
     all_categorical() ~ "{n_unweighted} ({p}%)"
+  ),
+  digits = list(
+    all_categorical() ~ c(0, 1),
+    all_continuous()  ~ c(2, 2)
+  ),
+  label = list(
+    total_screen_time ~ "Screen Time (Hours/Day)"
   )
 ) %>%
- # add_n("{N_miss_unweighted} ({p_miss})") %>%
- # modify_header(n ~ "**Missing n (%)**") %>%
-  modify_header(stat_1 ~ "**Q1**<br>(&le; 4 hours)<br>N = {n_unweighted}") %>%
-  modify_header(stat_2 ~ "**Q2** <br>(> 4 hours to &le; 6 hours)<br>N = {n_unweighted}") %>%
-  modify_header(stat_3 ~ "**Q3**<br>(> 6 hours to &le; 9 hours)<br>N = {n_unweighted}") %>%
-  modify_header(stat_4 ~ "**Q4** <br>(> 9 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_1 ~ "**Q1**<br>(&le; 4 hours)<br>N = {n_unweighted} ({style_number(p * 100, digits = 1)}%)") %>%
+  modify_header(stat_2 ~ "**Q2**<br>(> 4 hours to &le; 6 hours)<br>N = {n_unweighted} ({style_number(p * 100, digits = 1)}%)") %>%
+  modify_header(stat_3 ~ "**Q3**<br>(> 6 hours to &le; 9 hours)<br>N = {n_unweighted} ({style_number(p * 100, digits = 1)}%)") %>%
+  modify_header(stat_4 ~ "**Q4**<br>(> 9 hours)<br>N = {n_unweighted} ({style_number(p * 100, digits = 1)}%)") %>%
   modify_footnote(all_stat_cols() ~ NA)
 
-t1_female_comb
-
-#combined
+# Combined Table
 t1_combined <- tbl_merge(
   tbls = list(t1_male_comb, t1_female_comb),
   tab_spanner = c("**Males (n = 2,044)**", "**Females (n = 1,953)**")
@@ -335,6 +358,7 @@ t1_combined <- tbl_merge(
   gt::tab_source_note(
     source_note = "Continuous variables are presented as weighted mean (SE) and categorical variables are presented as unweighted n (weighted %). Abbreviations: NHANES, National Health and Nutrition Examination Survey; SE, Standard Error; PIR, Poverty Income Ratio."
   )
+
 t1_combined
 ```
 
@@ -353,7 +377,7 @@ gt::gtsave(t1_combined, filename = "Table1_Combined.png") #save combined as png
 ```{r}
 ## Assess Missingness ##
 # Variables needed for anal.
-req_vars <- c("RIDAGEYR", "RIDRETH3", "fpl_cat", "parent_edu", "FSDCH", "screen_quart", "DXDSTBMD", "BMXHT")
+req_vars <- c("RIDAGEYR", "age_cat", "RIDRETH3", "fpl_cat", "parent_edu", "fsdch_2cat", "screen_quart", "DXDSTBMD", "BMXHT")
 
 # Filter to subpop_eligible == 1 
 eval_missing_data <- nhanes_newvars %>%
@@ -376,7 +400,7 @@ design_missing_eval <- svydesign(
 table_missingness <- tbl_svysummary(
   data = design_missing_eval,
   by = analytic_status,
-  include = c(RIDAGEYR, RIAGENDR, RIDRETH3, fpl_cat, parent_edu, FSDCH, BMXHT, screen_quart),
+  include = c(RIAGENDR, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat, BMXHT, screen_quart),
   statistic = list(
     all_continuous()  ~ "{mean} ({mean.std.error})",
     all_categorical() ~ "{n_unweighted} ({p}%)"
@@ -404,30 +428,9 @@ gt::gtsave(table_missingness, filename = "table_missingness.docx") #save combine
 gt::gtsave(table_missingness, filename = "table_missingness.png") #save male as png
 ```
 
-Old code for making table 1. Can prob delete, but saving just in case for now.
+```{r}
+#saving a datafile with the new variables created, such as binary food security locally
+saveRDS(nhanes_newvars, file = here("data", "processed", "nhanes_bmd_pediatric_newvars.rds"))
 
-library(gtsummary) library(survey)
 
-# Subset designs by sex
-
-design_males \<- subset(subpop_design, RIAGENDR %in% c("Male", "male", 1)) design_females \<- subset(subpop_design, RIAGENDR %in% c("Female", "female", 2))
-
-# Table 1 Variables
-
-tb1_vars \<- c("RIDAGEYR", "RIDRETH3", "parent_edu", "fpl_cat", "FSDCH")
-
-#Table 1 - MALES table1_males \<- design_males %\>% tbl_svysummary( by = screen_quart, include = all_of(tb1_vars), statistic = list( all_continuous() \~ "{mean} ({sd})", all_categorical() \~ "{n_unweighted} ({p}%)" ), digits = all_categorical() \~ c(0, 1) ) %\>% add_overall(col_label = "**Overall** (N = {N_unweighted})") %\>% bold_labels()
-
-table1_males
-
-#Table 1 - FEMALES table1_females \<- design_females %\>% tbl_svysummary( by = screen_quart, include = all_of(tb1_vars), statistic = list( all_continuous() \~ "{mean} ({sd})", all_categorical() \~ "{n_unweighted} ({p}%)" ), digits = all_categorical() \~ c(0, 1) ) %\>% add_overall(col_label = "**Overall** (N = {N_unweighted})") %\>% bold_labels()
-
-table1_females
-
-#create subset for males and females (unweighted) unweighted_males \<- nhanes_newvars %\>% filter(subpop1 == 1 & RIAGENDR == "Male")
-
-unweighted_females \<- nhanes_newvars %\>% filter(subpop1 == 1 & RIAGENDR == "Female")
-
-nrow(unweighted_males) #verify numbers nrow(unweighted_females)
-
-#Unweighted counts unweighted_males %\>% freqtables::freq_table(screen_quart, RIDRETH3) %\>% select( screen_quart = row_cat, race_ethnicity = col_cat, n, percent = percent_row )
+```
