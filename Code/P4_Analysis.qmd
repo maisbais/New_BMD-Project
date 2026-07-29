@@ -1,7 +1,6 @@
 ---
 title: "P4"
 subtitle: "EPI DATA 536"
-format: html
 editor: visual
 date-modified: "today"
 format: 
@@ -17,6 +16,7 @@ editor_options:
 ---
 
 ## Dataset & Libraries
+
 ```{r}
 # Libraries
 library(tidyverse)
@@ -24,14 +24,15 @@ library(survey)
 library(gtsummary)
 library(tableone)
 library(here)
+library(broom)
 
 #dataset from P3_PartC
 nhanes_newvars<- readRDS(here("data", "processed", "nhanes_bmd_pediatric_newvars.rds"))
 
 ```
 
-
 ## Examination of Exposure & Evaluation of cell counts
+
 ```{r}
 # setting male analytic sample
 subpop_male <- subset(nhanes_newvars, 
@@ -82,9 +83,11 @@ subpop_female %>%
   tabyl(screen_quart, bmd_z_cat)
 
 ```
+
 **Cell counts for males and females that are food insecure do not appear to be adequate to produce statistically reliable estimates of proportions.**
 
 ## Examination of Outcome from Part C + Graphical Visualization
+
 ```{r}
 attach(nhanes_newvars)
 ## Primary survey design
@@ -173,6 +176,7 @@ svyboxplot(bmd_zscore_adj~1,
 ```
 
 ## Visualization of Exposure and Outcome with Linearity & Normality Evaluation
+
 ```{r}
 ## Visualization of Linearity in Exposure and Outcome ##
 # Among male subpop
@@ -237,7 +241,9 @@ ggplot(aug_female,
   stat_qq_line()
 
 ```
+
 ## Visualization of Linearity of other Continuous Independent Variables
+
 ```{r}
 ## Age as a Continuous Variable ##
 # creating a scatterplot in male subpop
@@ -252,8 +258,8 @@ nhanes_newvars%>%
 # overlaying a LOESS (locally weighted regression) plot
 nhanes_newvars%>% 
   filter(subpop1==1 & RIAGENDR =="Male")  %>% 
-  ggplot(aes(x = bmd_zscore_adj, 
-             y = RIDAGEYR)) +
+  ggplot(aes(x = RIDAGEYR, 
+             y = bmd_zscore_adj)) +
   geom_point() + 
   geom_smooth(method = "loess", 
               span = 0.75, 
@@ -464,7 +470,39 @@ gladder(pir_clean) # looking to see if PIR should be transformed
 
 ```
 
+```{r}
+## CHECKING WORK WITH SARAH; LOOKING AT BMD Z-SCORE AND PIR CATEGORIES. 
+## THERE IS A RED FLAG LOOKING AT DECREASING BMD AS PIR INCREASE. 
+## run the model among males
+crude_fpl_model <- svyglm(bmd_zscore_adj~fpl_cat, 
+                     design = subset(subpop_design, RIAGENDR =="Male"))
+
+summary(crude_fpl_model)
+
+## CONCERN WITH BMD Z-SCORE NOT BEING ACCURATE   
+## LOOKING AT og bmd variable
+crude_fplbmd_model <- svyglm(DXDSTBMD~fpl_cat, 
+                     design = subset(subpop_design, RIAGENDR =="Male"))
+
+summary(crude_fplbmd_model)
+
+
+nhanes_newvars%>% 
+  filter(subpop1==1 & RIAGENDR =="Male")  %>% 
+  ggplot(aes(x = INDFMPIR, 
+             y = DXDSTBMD)) + 
+  geom_point(position = position_jitter(width = 0.3, height = 0.1)) + 
+  labs(title = "Scatterplot of Continuous PIR and raw BMD score", 
+      y = "BMD OG Variable")
+
+
+```
+
+
+
+
 ## Estimate of the Crude Measure of Association
+
 ```{r}
 ## Output of simple linear regression model with survey weights for categorical predictor
 # among males
@@ -474,9 +512,7 @@ summary(model_male)
 summary(model_female)
 
 ```
+
 ## Estimate the Fully Adjusted Measure of Association
 
-
 ## Evaluate Effect Measure Modification
-
-
