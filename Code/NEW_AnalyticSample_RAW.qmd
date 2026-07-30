@@ -260,11 +260,13 @@ sum(nhanes_clean$flag_valid_fsq == 1 &
 sum(nhanes_clean$flag_valid_fsq == 1 & 
     (is.na(nhanes_clean$parent_edu)))
 ```
+
 ```{r}
 # Flagging new outcome variable
 nhanes_clean <- nhanes_clean %>%
   mutate(bmd_raw = DXDSTBMD)
 ```
+
 ```{r}
 # Save master dataset locally
 saveRDS(nhanes_clean, file = here("data", "processed", "nhanes_bmd_pediatric_master_rawoutcome.rds"))
