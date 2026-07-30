@@ -370,16 +370,7 @@ eval_missing_data <- nhanes_newvars %>%
     analytic_status = ifelse(
       subpop1 == 1, 
       "Analytic Sample (Included)", 
-      "Missing Data (Excluded)"),
-    # Add descriptive labels to the screen time quartile categories
-    screen_quart = factor(screen_quart,
-      levels = c("Q1", "Q2", "Q3", "Q4"),
-      labels = c("Q1 (≤4 hrs/day)", "Q2 (>4–6 hrs/day)", "Q3 (>6–9 hrs/day)", "Q4 (>9 hrs/day)")))
-
-# Add readable labels for the remaining unlabeled variables
-label(eval_missing_data$RIAGENDR)    <- "Sex"
-label(eval_missing_data$BMXHT)       <- "Height (cm)"
-label(eval_missing_data$screen_quart) <- "Screen Time Quartile"
+      "Missing Data (Excluded)"))
 
 # Create Survey Design Object for new eval_missing_data daataset
 design_missing_eval <- svydesign(

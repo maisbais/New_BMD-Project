@@ -401,7 +401,7 @@ gladder(pir_clean) # looking to see if PIR should be transformed
 
 ``` 
 
-## Estimate of the Crude Measure of Association
+## Estimates of the Crude Measure of Association
 
 ```{r}
 ## Output of simple linear regression model with survey weights for categorical predictor
@@ -413,7 +413,7 @@ summary(model_female)
 
 ```
 
-## Estimate the Fully Adjusted Measure of Association
+## Estimates of the Fully Adjusted Measure of Association
 ```{r}
 # need to relevel the race/ethnicity variable
 levels(nhanes_newvars$RIDRETH3)
@@ -500,6 +500,42 @@ tbl_regression(full_female_model,
 
 ```
 
+## Evaluation of Effect Measure Modification Food Security- Interaction
 
+```{r}
+## Evaluating EMM with interaction term in the model
+# Among Males
+library(jtools)
+int_male_model <- svyglm(DXDSTBMD~factor(screen_quart)*factor(fsdch_2cat) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+                            design = subset(subpop_design, RIAGENDR =="Male"))
 
-## Evaluate Effect Measure Modification
+# view the model
+summ(int_male_model, 
+     confint = T, 
+     ci.width = 0.95, 
+     exp = F)
+
+# Wald Test of Multiplicative Interaction
+regTermTest(int_male_model, ~factor(screen_quart):factor(fsdch_2cat), 
+            method = "Wald")
+
+# Among Females
+int_female_model <- svyglm(DXDSTBMD~factor(screen_quart)*factor(fsdch_2cat) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+                            design = subset(subpop_design, RIAGENDR =="Female"))
+
+# view the model
+summ(int_female_model, 
+     confint = T, 
+     ci.width = 0.95, 
+     exp = F)
+
+# Wald Test of Multiplicative Interaction
+regTermTest(int_female_model, ~factor(screen_quart):factor(fsdch_2cat), 
+            method = "Wald")
+
+```
+
+## Evaluation of Effect Measure Modification Food Security- Stratification
+```{r}
+
+```
