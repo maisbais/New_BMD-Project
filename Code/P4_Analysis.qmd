@@ -55,36 +55,7 @@ subpop_female |>
   mutate(fsdch_2cat = as.character(fsdch_2cat)) |> 
   tabyl(screen_quart, fsdch_2cat)
 
-
-# examination of exposure (screen time) and outcome (BMD z-score categorical) 
-# among EMM + SEX
-## Among food secure males
-subpop_male %>% 
-    mutate(fsdch_2cat = as.character(fsdch_2cat)) %>% 
-  filter(fsdch_2cat == "High/Marginal Food Security") %>% 
-  tabyl(screen_quart, bmd_z_cat)
-
-## Among food insecure males
-subpop_male %>% 
-    mutate(fsdch_2cat = as.character(fsdch_2cat)) %>% 
-  filter(fsdch_2cat == "Low/Very Low Food Security") %>% 
-  tabyl(screen_quart, bmd_z_cat)
-
-## Among food secure females
-subpop_female %>% 
-    mutate(fsdch_2cat = as.character(fsdch_2cat)) %>% 
-  filter(fsdch_2cat == "High/Marginal Food Security") %>% 
-  tabyl(screen_quart, bmd_z_cat)
-
-## Among food insecure females
-subpop_female %>% 
-    mutate(fsdch_2cat = as.character(fsdch_2cat)) %>% 
-  filter(fsdch_2cat == "Low/Very Low Food Security") %>% 
-  tabyl(screen_quart, bmd_z_cat)
-
 ```
-
-**Cell counts for males and females that are food insecure do not appear to be adequate to produce statistically reliable estimates of proportions.**
 
 ## Examination of Outcome from Part C + Graphical Visualization
 
@@ -496,10 +467,16 @@ nhanes_newvars%>%
       y = "BMD OG Variable")
 
 
+### troubleshoot
+troubleshoot_model <- nhanes_newvars |> lm(formula = bmd_zscore_adj~INDFMPIR)
+
+summary(troubleshoot_model)
+
+trouble_cat_model <- nhanes_newvars |> lm(formula = bmd_zscore_adj~fpl_cat)
+
+summary(trouble_cat_model)
+
 ```
-
-
-
 
 ## Estimate of the Crude Measure of Association
 
