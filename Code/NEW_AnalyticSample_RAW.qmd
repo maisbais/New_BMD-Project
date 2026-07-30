@@ -15,14 +15,17 @@ library(here)
 ## DEMOGRAPHICS (DEMO_H, DEMO_I, DEMO_J) ##
 # 1. Fetch individual cycles
 demo_h <- nhanes('DEMO_H') %>% 
-  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR) %>%
+  mutate(cycle = "H") # adding a tag for sensitivity analysis
 
 demo_i <- nhanes('DEMO_I') %>% 
-  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR) %>%
+  mutate(cycle = "I")
 
 # Cycle J uses DMDHREDZ instead of DMDHREDU -> selecting and renaming
 demo_j <- nhanes('DEMO_J') %>% 
-  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDZ, INDFMIN2, INDFMPIR)
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDZ, INDFMIN2, INDFMPIR) %>%
+  mutate(cycle = "J")
 
 # 2. Stack
 demo_raw <- bind_rows(demo_h, demo_i, demo_j)
@@ -120,9 +123,23 @@ nhanes_clean <- master_raw %>%
       .default = NA_character_
     ) %>% factor(levels = c("Less than High School", "High School / Some College", "College Grad or Above")),
     
-    age_band = floor(RIDEXAGM / 12)
-  )
+    age_band = floor(RIDEXAGM / 12),
 
+    # --- NEW: Physical activity eligibility indicators & PA variable ---
+    # Eligible to have been asked PAQ706 under the 2013-2016 design (age cap 15)
+    paq706_eligible_HI = ifelse(cycle %in% c("H", "I") & RIDAGEYR <= 15, 1, 0),
+    
+    # Eligible to have been asked PAQ706 under the 2017-2018 design (age cap 17)
+    paq706_eligible_J = ifelse(cycle == "J" & RIDAGEYR <= 17, 1, 0),
+    
+    # Combined eligibility, regardless of which cycle rule applies
+    paq706_eligible = ifelse(paq706_eligible_HI == 1 | paq706_eligible_J == 1, 1, 0),
+
+    # Clean PAQ706 (days per week active >=60 min), same refused/don't-know
+    pa_days = case_when(
+      PAQ706 %in% c(77, 99) ~ NA_real_,
+      TRUE ~ as.numeric(PAQ706)
+    ))
 ```
 
 ```{r}
