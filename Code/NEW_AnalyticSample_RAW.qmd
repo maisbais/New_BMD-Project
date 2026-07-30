@@ -15,14 +15,14 @@ library(here)
 ## DEMOGRAPHICS (DEMO_H, DEMO_I, DEMO_J) ##
 # 1. Fetch individual cycles
 demo_h <- nhanes('DEMO_H') %>% 
-  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
 
 demo_i <- nhanes('DEMO_I') %>% 
-  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDU, INDFMIN2, INDFMPIR)
 
 # Cycle J uses DMDHREDZ instead of DMDHREDU -> selecting and renaming
 demo_j <- nhanes('DEMO_J') %>% 
-  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDZ, INDFMIN2, INDFMPIR)
+  select(SEQN, SDMVPSU, SDMVSTRA, WTMEC2YR, RIDSTATR, RIDAGEYR, RIDEXAGM, RIAGENDR, RIDRETH3, DMDHREDZ, INDFMIN2, INDFMPIR)
 
 # 2. Stack
 demo_raw <- bind_rows(demo_h, demo_i, demo_j)
@@ -129,8 +129,9 @@ nhanes_clean <- master_raw %>%
 ## Step 2. PHASE 1: PROTOCOL ELIGIBILITY ##
 nhanes_clean <- nhanes_clean %>%
   mutate(
-    # verifies participant attended a MEC exam (has a valid exam age and a positive MEC weight)
-    flag_mec = ifelse(!is.na(RIDEXAGM) & WTMEC2YR > 0, 1, 0),
+    # verifies participant attended a MEC exam
+    # changed to RIDSTATR per code feedback
+    flag_mec = ifelse(RIDSTATR == "Both interviewed and MEC examined", 1, 0),
     
     #verifies age range criteria (8-17 years)
 flag_age = ifelse(flag_mec == 1 & RIDAGEYR >= 8 & RIDAGEYR <= 17, 1, 0),
@@ -144,34 +145,27 @@ subpop_eligible = ifelse(flag_dexa_eligible == 1, 1, 0))
 
 ```{r}
 ## Step 3. PHASE 2: MISSINGNESS EXCLUSIONS ##
+## edited based on code feedback
 nhanes_clean <- nhanes_clean %>%
   mutate(
-    # Starts from eligible sample (subpop_eligible == 1) and removes missing/invalid DEXA scans
-    flag_valid_dexa = ifelse(subpop_eligible == 1 & !is.na(DXDSTBMD), 1, 0),
-    
-    # REmoves participants missing standing height data
-    flag_valid_height = ifelse(flag_valid_dexa == 1 & !is.na(BMXHT), 1, 0),
-    
-    # Removes participants missing TV/computer screen time data
-    flag_valid_screen = ifelse(flag_valid_height == 1 & !is.na(total_screen_time), 1, 0),
-    
-    # Removes participants missing child food security questionnaire data
-    flag_valid_fsq = ifelse(flag_valid_screen == 1 & !is.na(FSDCH), 1, 0),
-    
-    # Removes participants missing race/ethnicity
-    flag_valid_race = ifelse(flag_valid_fsq == 1 & !is.na(RIDRETH3), 1, 0),
-    
-    # Removes participants missing household poverty level / income ratio
-    flag_valid_pir = ifelse(flag_valid_race == 1 & !is.na(INDFMPIR), 1, 0),
-    
-    # Removes participants missing parent education level
-    flag_valid_edu = ifelse(flag_valid_pir == 1 & !is.na(parent_edu), 1, 0),
+    # Each flag now checks missingness independently against subpop_eligible,
+    # not against the previous flag
+    flag_valid_dexa   = ifelse(subpop_eligible == 1 & !is.na(DXDSTBMD), 1, 0),
+    flag_valid_height = ifelse(subpop_eligible == 1 & !is.na(BMXHT), 1, 0),
+    flag_valid_screen = ifelse(subpop_eligible == 1 & !is.na(total_screen_time), 1, 0),
+    flag_valid_fsq    = ifelse(subpop_eligible == 1 & !is.na(FSDCH), 1, 0),
+    flag_valid_race   = ifelse(subpop_eligible == 1 & !is.na(RIDRETH3), 1, 0),
+    flag_valid_pir    = ifelse(subpop_eligible == 1 & !is.na(INDFMPIR), 1, 0),
+    flag_valid_edu    = ifelse(subpop_eligible == 1 & !is.na(parent_edu), 1, 0),
 
-    # Defines the final group with ZERO missing data across all key study variables
-    subpop1= ifelse(flag_valid_edu == 1, 1, 0),
-    
-    #subpop (DEXA valid only) for REFERENCE
-    subpop = ifelse(flag_valid_dexa == 1, 1, 0))
+    # Composite flag
+    subpop1 = ifelse(
+      flag_valid_dexa == 1 & flag_valid_height == 1 & flag_valid_screen == 1 &
+      flag_valid_fsq == 1 & flag_valid_race == 1 & flag_valid_pir == 1 & flag_valid_edu == 1,
+      1, 0),
+
+    subpop = ifelse(flag_valid_dexa == 1, 1, 0)  # DEXA-valid only, for reference
+  )
 ```
 
 ```{r}
