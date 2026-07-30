@@ -519,7 +519,6 @@ summ(int_male_model,
 regTermTest(int_male_model, ~factor(screen_quart):factor(fsdch_2cat), 
             method = "Wald")
 
-
 # Among Females
 int_female_model <- svyglm(DXDSTBMD~factor(screen_quart)*factor(fsdch_2cat) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
                             design = subset(subpop_design, RIAGENDR =="Female"))
@@ -540,4 +539,3 @@ regTermTest(int_female_model, ~factor(screen_quart):factor(fsdch_2cat),
 ```{r}
 
 ```
-
