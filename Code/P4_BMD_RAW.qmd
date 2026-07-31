@@ -48,7 +48,7 @@ nhanes_design_full <- svydesign(id = ~SDMVPSU,
                                 nest = TRUE, 
                                 data = nhanes_newvars)
 
-# Isolating analytic subpop
+# Isolating general analytic subpop
 
 subpop_design <- subset(nhanes_design_full, subpop1 == 1)
 
@@ -103,6 +103,7 @@ svyboxplot(DXDSTBMD~1, design = subset(subpop_design, RIAGENDR =="Female"))
 ```
 
 ## Visualization of Exposure and Outcome with Linearity & Normality Evaluation
+
 ```{r}
 ## Visualization of Linearity in Exposure and Outcome ##
 # Among male subpop
@@ -167,10 +168,13 @@ ggplot(aug_female,
   stat_qq_line()
 
 ```
-``
+
+\`\`
 
 ## Visualization of Linearity of other Continuous Independent Variables
+
 ### Age as a Continuous Variable
+
 ```{r}
 ## Age as a Continuous Variable ##
 # creating a scatterplot in male subpop
@@ -286,6 +290,7 @@ gladder(subpop_male$RIDAGEYR) # looking to see if age should be transformed
 ```
 
 ### Poverty Income Ratio as a Continuous Variable
+
 ```{r}
 ###### Poverty Income Ratio (PIR) as a Continuous Variable #####
 # creating a scatterplot in male subpop
@@ -399,7 +404,7 @@ pir_clean <- subpop_male %>%
 gladder(pir_clean) # looking to see if PIR should be transformed 
 # to another power not evaluated. The best one appears to be "identity". 
 
-``` 
+```
 
 ## Estimates of the Crude Measure of Association
 
@@ -414,6 +419,7 @@ summary(model_female)
 ```
 
 ## Estimates of the Fully Adjusted Measure of Association
+
 ```{r}
 # need to relevel the race/ethnicity variable
 levels(nhanes_newvars$RIDRETH3)
@@ -462,6 +468,7 @@ summary(full_female_model)
 ```
 
 ## Tables of Models
+
 ```{r}
 library(gt)
 ## Among males
@@ -536,6 +543,53 @@ regTermTest(int_female_model, ~factor(screen_quart):factor(fsdch_2cat),
 ```
 
 ## Evaluation of Effect Measure Modification Food Security- Stratification
+
 ```{r}
+# looking at levels of food security
+levels(nhanes_newvars$fsdch_2cat)
+
+
+### using the same survey specifications and analytic sample as in chunk 2
+## Among Males with Food Security
+strat_male_fs <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+                          design = subset(subpop_design, RIAGENDR =="Male"
+                                          & fsdch_2cat == "High/Marginal Food Security"))
+
+summary(strat_male_fs) # crude values
+
+#confidence interval, counts, p-val, etc 
+summ(strat_male_fs, confint = T) 
+
+
+## Among Males with Food Insecurity
+strat_male_fins <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+                        design = subset(subpop_design, RIAGENDR =="Male"
+                                        & fsdch_2cat == "Low/Very Low Food Security"))
+
+summary(strat_male_fins) # crude values
+
+#confidence interval, counts, p-val, etc 
+summ(strat_male_fins, confint = T) 
+
+## Among Females with Food Security
+strat_female_fs <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+                        design = subset(subpop_design, RIAGENDR =="Male"
+                                        & fsdch_2cat == "High/Marginal Food Security"))
+
+summary(strat_female_fs) # crude values
+
+#confidence interval, counts, p-val, etc 
+summ(strat_female_fs, confint = T) 
+
+
+## Among Females with Food Insecurity
+strat_female_fins <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+                          design = subset(subpop_design, RIAGENDR =="Male"
+                                          & fsdch_2cat == "Low/Very Low Food Security"))
+
+summary(strat_female_fins) # crude values
+
+#confidence interval, counts, p-val, etc 
+summ(strat_female_fins, confint = T) 
 
 ```
