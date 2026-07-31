@@ -1,0 +1,67 @@
+---
+title: "SensitivityAnalysis"
+format: html
+editor: visual
+---
+
+```{r}
+# Load libraries and data
+library(survey)
+library(here)
+library(tidyverse)
+library(gtsummary)
+library(gt)
+
+# Analytic dataset 
+nhanes_newvars <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome.rds"))
+# Releveled race/ethnicity category from P4_BMD_RAW
+nhanes_newvars <- nhanes_newvars %>% 
+  mutate(race_eth = fct_relevel(RIDRETH3, "Non-Hispanic White"))
+```
+
+```{r}
+# Survey design 
+nhanes_design_full <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_newvars)
+
+subpop_design <- subset(nhanes_design_full, subpop1 == 1)
+```
+
+```{r}
+# Sensitivity analysis with physical activity added
+# Indicators added in part A to account for survey design change
+full_male_model_pa <- svyglm(
+  DXDSTBMD ~ factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + 
+             INDFMPIR + BMXHT + pa_days_recode + pa_ineligible_flag,
+  design = subset(subpop_design, RIAGENDR == "Male"))
+
+summary(full_male_model_pa)
+
+full_female_model_pa <- svyglm(
+  DXDSTBMD ~ factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + 
+             INDFMPIR + BMXHT + pa_days_recode + pa_ineligible_flag,
+  design = subset(subpop_design, RIAGENDR == "Female"))
+
+summary(full_female_model_pa)
+```
+```{r}
+# Original models without physical activity for comparison
+full_male_model <- svyglm(
+  DXDSTBMD ~ factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + 
+             INDFMPIR + BMXHT,
+  design = subset(subpop_design, RIAGENDR == "Male"))
+
+summary(full_male_model)
+
+full_female_model <- svyglm(
+  DXDSTBMD ~ factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + 
+             INDFMPIR + BMXHT,
+  design = subset(subpop_design, RIAGENDR == "Female"))
+
+summary(full_female_model)
+
+```
