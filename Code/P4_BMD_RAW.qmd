@@ -573,7 +573,7 @@ summ(strat_male_fins, confint = T)
 
 ## Among Females with Food Security
 strat_female_fs <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
-                        design = subset(subpop_design, RIAGENDR =="Male"
+                        design = subset(subpop_design, RIAGENDR =="Female"
                                         & fsdch_2cat == "High/Marginal Food Security"))
 
 summary(strat_female_fs) # crude values
@@ -584,12 +584,43 @@ summ(strat_female_fs, confint = T)
 
 ## Among Females with Food Insecurity
 strat_female_fins <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
-                          design = subset(subpop_design, RIAGENDR =="Male"
+                          design = subset(subpop_design, RIAGENDR =="Female"
                                           & fsdch_2cat == "Low/Very Low Food Security"))
 
 summary(strat_female_fins) # crude values
 
 #confidence interval, counts, p-val, etc 
 summ(strat_female_fins, confint = T) 
+
+
+
+#Estimating the mean and central tendency of BMD by screen time quartiles and EMM's
+## Among Males
+svyby(formula = ~DXDSTBMD, 
+      by = ~factor(screen_quart), 
+      design = subset(subpop_design, RIAGENDR =="Male" & fsdch_2cat == "High/Marginal Food Security"), # by sex male & FS
+      FUN = svymean, 
+      keep.var = TRUE)
+
+svyby(formula = ~DXDSTBMD, 
+      by = ~factor(screen_quart), 
+      design = subset(subpop_design, RIAGENDR =="Male" & fsdch_2cat == "Low/Very Low Food Security"), # by sex male & FINS
+      FUN = svymean, 
+      keep.var = TRUE)
+
+
+## Among Females
+svyby(formula = ~DXDSTBMD, 
+      by = ~factor(screen_quart), 
+      design = subset(subpop_design, RIAGENDR =="Female" & fsdch_2cat == "High/Marginal Food Security"),# by sex female & FS
+      FUN = svymean, 
+      keep.var = TRUE)
+
+svyby(formula = ~DXDSTBMD, 
+      by = ~factor(screen_quart), 
+      design = subset(subpop_design, RIAGENDR =="Female" & fsdch_2cat == "Low/Very Low Food Security"),# by sex female & FINS
+      FUN = svymean, 
+      keep.var = TRUE)
+
 
 ```
