@@ -92,6 +92,7 @@ master_raw <- demo_raw %>%
 ```
 
 ```{r}
+
 ## step 1. INITIAL FILTERING & SCREEN TIME CLEANING ##
 # Preserves all N = 29,400 observations per survey estimation rules
 nhanes_clean <- master_raw %>%
@@ -139,7 +140,12 @@ nhanes_clean <- master_raw %>%
     pa_days = case_when(
       PAQ706 %in% c(77, 99) ~ NA_real_,
       TRUE ~ as.numeric(PAQ706)
-    ))
+    ),
+    
+    # Missing-indicators for participants who weren't asked PA question purely due to survey design and change
+    pa_ineligible_flag = ifelse(paq706_eligible == 0, 1, 0),
+    pa_days_recode = ifelse(paq706_eligible == 0, 0, pa_days)
+  )
 ```
 
 ```{r}
