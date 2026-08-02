@@ -88,7 +88,7 @@ nhanes_newvars <- nhanes_newvars %>%
     ) %>% factor(levels = c("8–12 years", "12–17 years")))
 
 # UPDATED: missingness check now on bmd_raw instead of the old z-score
-sum(nhanes_newvars$subpop1 == 1 & is.na(nhanes_newvars$bmd_raw))
+sum(nhanes_newvars$subpop1 == 1 & is.na(nhanes_newvars$DXDSTBMD))
 ```
 
 ```{r}
@@ -370,7 +370,16 @@ eval_missing_data <- nhanes_newvars %>%
     analytic_status = ifelse(
       subpop1 == 1, 
       "Analytic Sample (Included)", 
-      "Missing Data (Excluded)"))
+      "Missing Data (Excluded)"),
+    # Add descriptive labels to the screen time quartile categories
+    screen_quart = factor(screen_quart,
+      levels = c("Q1", "Q2", "Q3", "Q4"),
+      labels = c("Q1 (≤4 hrs/day)", "Q2 (>4–6 hrs/day)", "Q3 (>6–9 hrs/day)", "Q4 (>9 hrs/day)")))
+
+# Add readable labels for the remaining unlabeled variables
+label(eval_missing_data$RIAGENDR)    <- "Sex"
+label(eval_missing_data$BMXHT)       <- "Height (cm)"
+label(eval_missing_data$screen_quart) <- "Screen Time Quartile"
 
 # Create Survey Design Object for new eval_missing_data daataset
 design_missing_eval <- svydesign(
@@ -418,4 +427,57 @@ gt::gtsave(table_missingness, filename = "table_missingness.png") #save male as 
 #saving a datafile with the new variables created, such as binary food security locally
 # UPDATED: filename now flags this as the raw-outcome version
 saveRDS(nhanes_newvars, file = here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome.rds"))
+```
+
+```{r}
+
+```
+
+```{r}
+## Adding a combined column to Table 1 
+## Overall Table (Total column)
+t1_total_comb <- tbl_svysummary(
+  data = subpop_design,   # your full survey design object
+  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
+  missing = "no",
+  statistic = list(
+    total_screen_time ~ "{mean} ({mean.std.error})",
+    all_continuous()  ~ "{mean} ({mean.std.error})",
+    all_categorical() ~ "{n_unweighted} ({p}%)"
+  ),
+  digits = list(
+    all_categorical() ~ c(0, 1),
+    all_continuous()  ~ c(2, 2)
+  ),
+  label = list(
+    total_screen_time ~ "Screen Time (Hours/Day)"
+  )
+) %>%
+  modify_header(
+    label ~ "**Variable**",
+    stat_0 ~ "**Total**<br>N = {n_unweighted}"
+  ) %>%
+  modify_footnote(all_stat_cols() ~ NA)
+
+
+## Merge all three tables
+t1_combined_full <- tbl_merge(
+  tbls = list(t1_total_comb, t1_male_comb, t1_female_comb),
+  tab_spanner = c("**Total**", "**Males (n = 2,044)**", "**Females (n = 1,953)**")
+) %>%
+  modify_caption(
+    caption = "Table 1. NHANES 2013-2018 distribution of characteristics among U.S. children 8 to 17 years of age stratified by sex and daily screen time quartiles"
+  ) %>%
+  as_gt() %>%
+  gt::tab_source_note(
+    source_note = "Continuous variables are presented as weighted mean (SE) and categorical variables are presented as unweighted n (weighted %). Abbreviations: NHANES, National Health and Nutrition Examination Survey; SE, Standard Error; PIR, Poverty Income Ratio."
+  )
+
+t1_combined_full
+
+gt::gtsave(t1_combined_full, filename = "Table1_Combined.png") #save combined as png
+
+```
+
+```         
 ```
