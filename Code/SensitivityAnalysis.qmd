@@ -48,6 +48,7 @@ full_female_model_pa <- svyglm(
 
 summary(full_female_model_pa)
 ```
+
 ```{r}
 # Original models without physical activity for comparison
 full_male_model <- svyglm(
