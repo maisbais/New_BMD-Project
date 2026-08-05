@@ -23,39 +23,210 @@ library(tidyr)
 # install.packages("cdcanthro")
 library(here)
 library(janitor)
+library(cdcanthro)
 
 # I will be using the dataset from P3- "Analytic Sample_PartA"
 # This dataset includes everybody from the 3 waves, not just our study population
 nhanes_clean <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_master.rds"))
 
 # This dataset does have some variables created from prior z-score attempts...
-# previously created variables will be checked.
+# previously created variables will be checked, if used.
 ```
 
 
 # Step 1: create height-adjusted z-scores with package cdcanthro
 ```{r}
 # creating an age indicator
+nhanes_clean <- nhanes_clean |> 
+  mutate(
+    age_instudy = case_when(
+      RIDAGEYR >= 0 & RIDAGEYR <= 7 ~ "0", 
+      RIDAGEYR >= 8 & RIDAGEYR <=17 ~ "1", 
+      RIDAGEYR > 17 ~ "0", 
+      TRUE ~ NA_character_) |> 
+  factor(levels = c("0", "1")))
+
+nhanes_clean |> 
+tabyl(RIDAGEYR, age_instudy) # checking to make sure indicator is coded correct
+
+# convert age in years to age in months.
+# there is already a variable in NHANES that has age in months up to 19 y.o
+# it is called RIDEXAGM, however some people in our study pop are missing this var,
+
+sum(is.na(nhanes_clean$RIDEXAGM))
+sum(is.na(nhanes_clean$BMXHT))
+sum(is.na(nhanes_clean$RIDAGEYR))
+
+# so ill just create a var with RIDAGEYR since missing = 0
+nhanes_clean <- nhanes_clean |> 
+  mutate(age_months = RIDAGEYR*12 + 6) 
+sum(is.na(nhanes_clean$age_months)) # check, no missing values. 
+
+# use cdcanthro() to calculate haz scores. Because cdcanthro is limited for a certain age range, and we’re not dropping anyone from the original NHANES in order to preserve the weighting, try:
+
+haz_results <- cdcanthro(data=subset(nhanes_clean, age_instudy==1), 
+                         age=age_months, ht = BMXHT)
+
+# because we have a prior variable called "haz" (from prior attempts), the newly created 
+# variable is called "haz0". 
+
+class(haz_results) # check to make sure it is d.f
+
+# left join back to the large data frame
+nhanes_full <- nhanes_clean %>% left_join(haz_results, by= "SEQN")
+# there are duplicate columns in our df now, demarcated by ".x" or ".y"
+# (no prob...)
+
+# checking to see how many HAZ we are missing in our study pop
+nhanes_full %>%
+  group_by(age_instudy.x) %>%
+  summarise(na_count = sum(is.na(haz0)),
+            non_na_count = sum(!is.na(haz0))) 
+# we have 272 people in our study population who are missing a HAZ score. 
+
+nhanes_full %>%
+  group_by(age_instudy.x) %>%
+  summarise(na_count = sum(is.na(BMXHT.x)),
+            non_na_count = sum(!is.na(BMXHT.x))) 
+
+# because we have 272 people who are missing a height... just checking
+
+```
+
+# Step 2: Run Survey design using svydesign() on the updated NHANES data with the haz scores
+```{r}
+# Temporary survey design with the new 'haz0' score
+library(survey)
+design <- svydesign(
+  id = ~SDMVPSU.x,
+  strata = ~SDMVSTRA.x,
+  weights = ~WTMEC6YR.x,
+  nest = TRUE,
+  data = nhanes_full) 
+
+```
+
+# Step 3: Calculate weighted group-specific mean and variance (to get SD) for BMD (age x sex only)
+```{r}
+# calculating weighted mean 
+group_mean_stats <- svyby(
+  formula = ~DXDSTBMD.x,
+  by = ~RIDAGEYR.x + RIAGENDR.x,
+  design = design,
+  FUN = svymean,
+  na.rm = TRUE,
+  keep.var = TRUE
+) |>
+  as.data.frame()
+
+names(group_mean_stats)[3] <- "group_mean" # changing name for [3] of the list
+
+group_mean_stats <- group_mean_stats |>
+  select(RIDAGEYR.x, RIAGENDR.x, group_mean) # removes (se) column
+
+group_mean_stats # columns exist, although unclear why some ages have means of 0.
+# however, our study pop of interest has means. 
+
+# calculating weighted SD
+group_var_stats <- svyby(
+  formula = ~DXDSTBMD.x,
+  by = ~RIDAGEYR.x + RIAGENDR.x,
+  design = design,
+  FUN = svyvar,
+  na.rm = TRUE,
+  keep.var = TRUE
+) |>
+  as.data.frame()
+
+names(group_var_stats)[3] <- "group_var" # changing name for [3] of the list
+
+group_var_stats <- group_var_stats |>
+  select(RIDAGEYR.x, RIAGENDR.x, group_var)
+
+group_var_stats # columns exist, hard to tell if they look fully OK.
 
 
+# Merge means and variance and calculate SDs by taking the square root of the variance:
+  group_stats <- left_join(group_mean_stats, group_var_stats, by = c("RIDAGEYR.x", "RIAGENDR.x")) %>% mutate(group_sd = sqrt(group_var))
+
+group_stats # I have all the columns (mean, var, and sd)
+  
+```
+
+# Step 4: Merge back to the big NHANES dataset and compute unadjusted BMD z-scores
+
+```{r}
+# merging the df above to the complete NHANES dataset
+nhanes_merge <- left_join(nhanes_full, group_stats, 
+                          by = c("RIDAGEYR.x", 
+                                "RIAGENDR.x")) |> 
+
+  mutate(z_unadj = 
+           (DXDSTBMD.x - group_mean) / group_sd) # computing unadjusted BMD 
+#and creating new column var 
 
 
+nhanes_merge %>%
+  group_by(age_instudy.x) %>%
+  summarise(na_count = sum(is.na(z_unadj)),
+            non_na_count = sum(!is.na(z_unadj))) 
+
+# missing n = 1062 in our age_instudy pop who are missing a z-unadj score. 
+# I'd like to check this and see if the n missing should be this large.
+
+```
+
+# Step 5: Calculate HAZ-adjusted BMD z-scores
+```{r}
+# Create a filter indicator for complete unadjusted z-scores (z_unadj variable) (yes/no)
+
+nhanes_merge <- nhanes_merge |> 
+  mutate(
+    z_unadj_cat = if_else(is.na(z_unadj), "no", "yes"))
+
+# what is this indicator variable for? 
+
+# check    
+table(is.na(nhanes_merge$z_unadj), nhanes_merge$z_unadj_cat)
+# unsure if this indicator variable worked properly
 
 
-nhanes_clean <- cdcanthro::cdcanthro(nhanes_clean,
-age = RIDEXAGM,
-ht = BMXHT)
+#Run your survey design again, applying the indicator for complete unadjusted z scores above.
+# Let’s call this survey design “design” still.
+design <- svydesign(
+  id = ~SDMVPSU.x,
+  strata = ~SDMVSTRA.x,
+  weights = ~WTMEC6YR.x,
+  nest = TRUE,
+  data = nhanes_merge) 
 
-nhanes_clean |> tabyl(RIDAGEYR, age_band)
+# Run a linear model: 
+haz_model <- svyglm(z_unadj ~ haz0, design = design) 
+# I ran the linear model with the the continuous "z_unadj" rather than indicator.
 
-nhanes_band <- nhanes_clean |>
-filter(age_band >= 8, age_band <= 17) |>
-group_by(age_band, sex) |>
-summarize(
-mean_group_bmd = mean(DXDSTBMD, na.rm = TRUE),
-sd_group_bmd   = sd(DXDSTBMD, na.rm = TRUE),
-.groups = "drop"
-)
+library(jtools)
+summ(haz_model)
+# for some reason the haz model has 4504 observations which is causing issues with the code lines below. 
+
+
+# Now, in your NHANES data, create new variables for individual predicted z scores and individual residual from the haz_model above. The residual is the unadjusted z scores minus the predicted
+
+nhanes_merge <- nhanes_merge %>% mutate(
+  z_pred = fitted(haz_model),
+  z_resid = (z_unadj - z_pred))
+
+
+# Run your survey design again since you just created new variables – for simplicity I still call it “design” for now.
+
+
+# Get the variance of the residual z scores to calculate their SD
+resid_var <- svyvar(~z_resid, design = design)
+
+resid_sd <- sqrt(as.numeric(resid_var))
+
+# Now, obtain the HAZ-adjusted BMD z scores:
+nhanes <- nhanes %>% mutate(z_haz_adj = z_resid / resid_sd)
+
 
 ```
 
@@ -68,385 +239,13 @@ sd_group_bmd   = sd(DXDSTBMD, na.rm = TRUE),
 
 
 
-# Step 3: Calculate the unadjusted (for HAZ 😊) BMD-Z
-nhanes_clean <- nhanes_clean |>
-left_join(nhanes_band, by = c("age_band", "sex")) |>
-mutate(
-bmd_z_unadjusted = (DXDSTBMD - mean_group_bmd) / sd_group_bmd
-)
-# Step 4: create a linear model where the dependent variable is unadjusted BMD,
-# independent variable is HAZ
-bmd_model <- lm(bmd_z_unadjusted ~ haz0,
-data = nhanes_clean)
-# Step 5: use the model to predict the residual for each observation
-#(whatever part of the child's BMD Z-score isn't explained by their height)
-# and the SD for the residuals.
-library(broom) # I think I can just use the augment function for this...
-aug_model <- augment(bmd_model, data = nhanes_clean)
-aug_model <- augment(bmd_model)
-glimpse(aug_model)
-?augment
-resid_sd <- sd(aug_model$.resid, na.rm = TRUE)
-# The final HAZ-adjusted BMD Z-score will then essentially be:
-#individuals predicted residuals/the SD of residuals
-nhanes_clean <- aug_model %>%
-mutate(
-tblh_bmd_z_adj = .resid / resid_sd
-)
-sum(!is.na(nhanes_clean$tblh_bmd_z_adj))
-nhanes_clean |>
-tabyl(age_band, tblh_bmd_z_adj)
-remove(resid_sd)
-remove(nhanes_clean)
-# Step 1: create height-adjusted z-scores with package cdcanthro
-nhanes_clean <- cdcanthro::cdcanthro(nhanes_clean,
-age = RIDEXAGM,
-ht = BMXHT)
-# install.packages("cdcanthro")
-#=========================================================================
-# I will be using the dataset from P3- "Analytic Sample_PartA"
-# Dataset includes everybody from the 3 waves, not just our study population
-nhanes_clean <- readRDS(here("data",
-"processed", "nhanes_bmd_pediatric_master.rds"))
-# Step 1: create height-adjusted z-scores with package cdcanthro
-nhanes_clean <- cdcanthro::cdcanthro(nhanes_clean,
-age = RIDEXAGM,
-ht = BMXHT)
-# dataframe calculating the mean and SD for bands
-nhanes_band <- nhanes_clean |>
-filter(age_band >= 8, age_band <= 17) |>
-group_by(age_band, sex) |>
-summarize(
-mean_group_bmd = mean(DXDSTBMD, na.rm = TRUE),
-sd_group_bmd   = sd(DXDSTBMD, na.rm = TRUE),
-.groups = "drop"
-)
-# Step 3: Calculate the unadjusted (for HAZ 😊) BMD-Z
-nhanes_clean <- nhanes_clean |>
-left_join(nhanes_band, by = c("age_band", "sex")) |>
-mutate(
-bmd_z_unadjusted = (DXDSTBMD - mean_group_bmd) / sd_group_bmd
-)
-# Step 4: create a linear model where the dependent variable is unadjusted BMD,
-# independent variable is HAZ
-bmd_model <- lm(bmd_z_unadjusted ~ haz0,
-data = nhanes_clean)
-aug_model <- augment(bmd_model)
-glimpse(aug_model) # residuals but no SD of residuals...
-View(aug_model)
-aug_model <-aug_model |>
-mutate(resid_sd = sd(.resid, na.rm = TRUE))
-# The final HAZ-adjusted BMD Z-score will then essentially be:
-# individuals predicted residuals/the SD of residuals
-aug_model <- aug_model %>%
-mutate(
-tblh_bmd_z_adj = .resid / resid_sd
-)
-remove(aug_model)
-nhanes_clean <- nhanes_clean |>
-mutate(row_id = row_number())
-remove(nhanes_clean)
-# install.packages("cdcanthro")
-#=========================================================================
-# I will be using the dataset from P3- "Analytic Sample_PartA"
-# Dataset includes everybody from the 3 waves, not just our study population
-nhanes_clean <- readRDS(here("data",
-"processed", "nhanes_bmd_pediatric_master.rds"))
-# Step 1: create height-adjusted z-scores with package cdcanthro
-nhanes_clean <- cdcanthro::cdcanthro(nhanes_clean,
-age = RIDEXAGM,
-ht = BMXHT)
-# dataframe calculating the mean and SD for bands
-nhanes_band <- nhanes_clean |>
-filter(age_band >= 8, age_band <= 17) |>
-group_by(age_band, sex) |>
-summarize(
-mean_group_bmd = mean(DXDSTBMD, na.rm = TRUE),
-sd_group_bmd   = sd(DXDSTBMD, na.rm = TRUE),
-.groups = "drop"
-)
-# Step 3: Calculate the unadjusted (for HAZ 😊) BMD-Z
-nhanes_clean <- nhanes_clean |>
-left_join(nhanes_band, by = c("age_band", "sex")) |>
-mutate(
-bmd_z_unadjusted = (DXDSTBMD - mean_group_bmd) / sd_group_bmd
-)
-# Step 4: create a linear model where the dependent variable is unadjusted BMD,
-# independent variable is HAZ
-bmd_model <- lm(bmd_z_unadjusted ~ haz0,
-data = nhanes_clean)
-nhanes_clean <- nhanes_clean |>
-mutate(.rownames = row_number()) # creating a row number to left join later.
-aug_model <- augment(bmd_model)
-glimpse(aug_model) # residuals but no SD of residuals...
-aug_model <-aug_model |>
-mutate(resid_sd = sd(.resid, na.rm = TRUE)) # calc for SD of residuals
-# The final HAZ-adjusted BMD Z-score will then essentially be:
-# individuals predicted residuals/the SD of residuals
-aug_model <- aug_model %>%
-mutate(
-tblh_bmd_z_adj = .resid / resid_sd
-)
-?left_join
-# left join thse new values
-aug_model_select <- aug_model |>
-select(.rownames, .fitted, .resid, resid_sd, tblh_bmd_z_adj)
-nhanes_bmd <- nhanes_clean |>
-left_join(aug_model_select, by = ".rownames")
-nhanes_clean <- nhanes_clean |>
-mutate(.rownames = row_number()) |>
-as.character() # creating a row number to left join later.
-nhanes_bmd <- nhanes_clean |>
-left_join(aug_model_select, by = ".rownames")
-remove(nhanes_clean)
-# install.packages("cdcanthro")
-#=========================================================================
-# I will be using the dataset from P3- "Analytic Sample_PartA"
-# Dataset includes everybody from the 3 waves, not just our study population
-nhanes_clean <- readRDS(here("data",
-"processed", "nhanes_bmd_pediatric_master.rds"))
-# Step 1: create height-adjusted z-scores with package cdcanthro
-nhanes_clean <- cdcanthro::cdcanthro(nhanes_clean,
-age = RIDEXAGM,
-ht = BMXHT)
-# dataframe calculating the mean and SD for bands
-nhanes_band <- nhanes_clean |>
-filter(age_band >= 8, age_band <= 17) |>
-group_by(age_band, sex) |>
-summarize(
-mean_group_bmd = mean(DXDSTBMD, na.rm = TRUE),
-sd_group_bmd   = sd(DXDSTBMD, na.rm = TRUE),
-.groups = "drop"
-)
-# Step 3: Calculate the unadjusted (for HAZ 😊) BMD-Z
-nhanes_clean <- nhanes_clean |>
-left_join(nhanes_band, by = c("age_band", "sex")) |>
-mutate(
-bmd_z_unadjusted = (DXDSTBMD - mean_group_bmd) / sd_group_bmd
-)
-# Step 4: create a linear model where the dependent variable is unadjusted BMD,
-# independent variable is HAZ
-bmd_model <- lm(bmd_z_unadjusted ~ haz0,
-data = nhanes_clean)
-nhanes_clean <- nhanes_clean |>
-mutate(.rownames = as.character(row_number())) # creating a row number to left join later.
-nhanes_bmd <- nhanes_clean |>
-left_join(aug_model_select, by = ".rownames")
-nhanes_bmd |>
-tabyl(age_band, tblh_bmd_z_adj)
-View(nhanes_bmd)
-# AI generated check
-library(dplyr)
-library(ggplot2)
-# 1) Overall summary
-nhanes %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = mean(tblh_bmd_z_adj, na.rm = TRUE),
-sd_z   = sd(tblh_bmd_z_adj, na.rm = TRUE),
-min_z  = min(tblh_bmd_z_adj, na.rm = TRUE),
-max_z  = max(tblh_bmd_z_adj, na.rm = TRUE)
-)
-# 1) Overall summary
-nhanes_bmd %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = mean(tblh_bmd_z_adj, na.rm = TRUE),
-sd_z   = sd(tblh_bmd_z_adj, na.rm = TRUE),
-min_z  = min(tblh_bmd_z_adj, na.rm = TRUE),
-max_z  = max(tblh_bmd_z_adj, na.rm = TRUE)
-)
-# 1) Overall summary
-nhanes_bmd %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = mean(tblh_bmd_z_adj, na.rm = TRUE),
-sd_z   = sd(tblh_bmd_z_adj, na.rm = TRUE),
-min_z  = min(tblh_bmd_z_adj, na.rm = TRUE),
-max_z  = max(tblh_bmd_z_adj, na.rm = TRUE)
-)
-# 2) By age band and sex
-nhanes_bmd %>%
-group_by(age_band, sex) %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = mean(tblh_bmd_z_adj, na.rm = TRUE),
-sd_z   = sd(tblh_bmd_z_adj, na.rm = TRUE),
-.groups = "drop"
-)
-# 3) Z-score vs age
-ggplot(nhanes, aes(x = age_years, y = tblh_bmd_z_adj, color = factor(sex))) +
-geom_point(alpha = 0.3) +
-geom_smooth(se = FALSE, method = "loess") +
-geom_hline(yintercept = 0, linetype = "dashed") +
-labs(x = "Age (years)", y = "Adjusted TBLH BMD z-score", color = "Sex")
-# 3) Z-score vs age
-ggplot(nhanes_bmd, aes(x = age_years, y = tblh_bmd_z_adj, color = factor(sex))) +
-geom_point(alpha = 0.3) +
-geom_smooth(se = FALSE, method = "loess") +
-geom_hline(yintercept = 0, linetype = "dashed") +
-labs(x = "Age (years)", y = "Adjusted TBLH BMD z-score", color = "Sex")
-# 3) Z-score vs age
-ggplot(nhanes_bmd, aes(x = RIDAGEYR, y = tblh_bmd_z_adj, color = factor(sex))) +
-geom_point(alpha = 0.3) +
-geom_smooth(se = FALSE, method = "loess") +
-geom_hline(yintercept = 0, linetype = "dashed") +
-labs(x = "Age (years)", y = "Adjusted TBLH BMD z-score", color = "Sex")
-# 4) Z-score vs height
-ggplot(nhanes_bmd, aes(x = BMXHT, y = tblh_bmd_z_adj, color = factor(sex))) +
-geom_point(alpha = 0.3) +
-geom_smooth(se = FALSE, method = "loess") +
-geom_hline(yintercept = 0, linetype = "dashed") +
-labs(x = "Height (cm)", y = "Adjusted TBLH BMD z-score", color = "Sex")
-# 5) Histogram
-ggplot(nhanes_bmd, aes(x = tblh_bmd_z_adj)) +
-geom_histogram(bins = 30, color = "white") +
-geom_vline(xintercept = 0, linetype = "dashed") +
-labs(x = "Adjusted TBLH BMD z-score", y = "Count")
-# 6) Q-Q plot
-qqnorm(nhanes_bmd$tblh_bmd_z_adj)
-qqline(nhanes_bmd$tblh_bmd_z_adj, col = "red")
-# 7) If you still have the model object, residuals vs fitted
-plot(aug_model$.fitted, aug_model$.resid,
-xlab = "Fitted values", ylab = "Residuals")
-# 7) If you still have the model object, residuals vs fitted
-plot(aug_model$.fitted, aug_model$.resid,
-xlab = "Fitted values", ylab = "Residuals") |>
-abline(h = 0, col = "red", lty = 2)
-# 1) Overall summary
-nhanes_bmd %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = mean(tblh_bmd_z_adj, na.rm = TRUE),
-sd_z   = sd(tblh_bmd_z_adj, na.rm = TRUE),
-min_z  = min(tblh_bmd_z_adj, na.rm = TRUE),
-max_z  = max(tblh_bmd_z_adj, na.rm = TRUE)
-)
-# 2) By age band and sex
-nhanes_bmd %>%
-group_by(age_band, sex) %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = mean(tblh_bmd_z_adj, na.rm = TRUE),
-sd_z   = sd(tblh_bmd_z_adj, na.rm = TRUE),
-.groups = "drop"
-)
-# 2) By age band and sex
-print(nhanes_bmd %>%
-group_by(age_band, sex) %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = mean(tblh_bmd_z_adj, na.rm = TRUE),
-sd_z   = sd(tblh_bmd_z_adj, na.rm = TRUE),
-.groups = "drop"
-))
-nhanes_bmd %>%
-group_by(age_band, sex) %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = ifelse(n > 0, mean(tblh_bmd_z_adj, na.rm = TRUE), NA_real_),
-sd_z   = ifelse(n > 1, sd(tblh_bmd_z_adj, na.rm = TRUE), NA_real_),
-.groups = "drop"
-)
-print(nhanes_bmd %>%
-group_by(age_band, sex) %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = ifelse(n > 0, mean(tblh_bmd_z_adj, na.rm = TRUE), NA_real_),
-sd_z   = ifelse(n > 1, sd(tblh_bmd_z_adj, na.rm = TRUE), NA_real_),
-.groups = "drop"
-))
-# Create a stable join key
-nhanes_clean <- nhanes_clean |>
-mutate(.rownames = as.character(row_number()))
-# Fit/augment with the original data
-aug_model <- augment(bmd_model, data = nhanes_clean)
-# install.packages("cdcanthro")
-#=========================================================================
-# I will be using the dataset from P3- "Analytic Sample_PartA"
-# Dataset includes everybody from the 3 waves, not just our study population
-nhanes_clean <- readRDS(here("data",
-"processed", "nhanes_bmd_pediatric_master.rds"))
-# Step 1: create height-adjusted z-scores with package cdcanthro
-nhanes_clean <- cdcanthro::cdcanthro(nhanes_clean,
-age = RIDEXAGM,
-ht = BMXHT)
-# creating a dataframe calculating the mean and SD for bands
-nhanes_band <- nhanes_clean |>
-filter(age_band >= 8, age_band <= 17) |>
-group_by(age_band, sex) |>
-summarize(
-mean_group_bmd = mean(DXDSTBMD, na.rm = TRUE),
-sd_group_bmd   = sd(DXDSTBMD, na.rm = TRUE),
-.groups = "drop"
-)
-# Step 3: Calculate the unadjusted (for HAZ 😊) BMD-Z
-nhanes_clean <- nhanes_clean |>
-left_join(nhanes_band, by = c("age_band", "sex")) |>
-mutate(
-bmd_z_unadjusted = (DXDSTBMD - mean_group_bmd) / sd_group_bmd
-)
-# Step 4: create a linear model where the dependent variable is unadjusted BMD,
-# independent variable is HAZ
-bmd_model <- lm(bmd_z_unadjusted ~ haz0,
-data = nhanes_clean)
-# Create a stable join key
-nhanes_clean <- nhanes_clean |>
-mutate(.rownames = as.character(row_number()))
-# Fit/augment with the original data
-aug_model <- augment(bmd_model, data = nhanes_clean)
-rlang::last_trace()
-remove(nhanes_clean)
-# install.packages("cdcanthro")
-#=========================================================================
-# I will be using the dataset from P3- "Analytic Sample_PartA"
-# Dataset includes everybody from the 3 waves, not just our study population
-nhanes_clean <- readRDS(here("data",
-"processed", "nhanes_bmd_pediatric_master.rds"))
-# Step 1: create height-adjusted z-scores with package cdcanthro
-nhanes_clean <- cdcanthro::cdcanthro(nhanes_clean,
-age = RIDEXAGM,
-ht = BMXHT)
-# creating a dataframe calculating the mean and SD for bands
-nhanes_band <- nhanes_clean |>
-filter(age_band >= 8, age_band <= 17) |>
-group_by(age_band, sex) |>
-summarize(
-mean_group_bmd = mean(DXDSTBMD, na.rm = TRUE),
-sd_group_bmd   = sd(DXDSTBMD, na.rm = TRUE),
-.groups = "drop"
-)
-# Step 3: Calculate the unadjusted (for HAZ 😊) BMD-Z
-nhanes_clean <- nhanes_clean |>
-left_join(nhanes_band, by = c("age_band", "sex")) |>
-mutate(
-bmd_z_unadjusted = (DXDSTBMD - mean_group_bmd) / sd_group_bmd
-)
-# Step 4: create a linear model where the dependent variable is unadjusted BMD,
-# independent variable is HAZ
-bmd_model <- lm(bmd_z_unadjusted ~ haz0,
-data = nhanes_clean)
-# I am going to try step 5 a different way
-nhanes_clean <- nhanes_clean %>%
-mutate(
-bmd_predict   = predict(bmd_model, newdata = nhanes_clean),
-bmd_resid  = DXDSTBMD - bmd_predict,
-bmd_resid_sd = sd(bmd_resid, na.rm = TRUE),
-tblh_bmd_z_adj = bmd_resid / bmd_resid_sd
-)
-View(nhanes_clean)
-# 2) By age band and sex----> I am having issues with this, which tells me
-# I may have done something wrong above.
-print(nhanes_clean %>%
-group_by(age_band, sex) %>%
-summarize(
-n = sum(!is.na(tblh_bmd_z_adj)),
-mean_z = mean(tblh_bmd_z_adj, na.rm = TRUE),
-sd_z   = sd(tblh_bmd_z_adj, na.rm = TRUE),
-.groups = "drop"
-))
-install.packages("remotes")
-remotes::install_github("jmcphers/rsrecovr")
-rsrecovr::recovr()
-savehistory("~/New_BMD-Project/recovered_202608042145/bmd_zscore_Anabel.Rhistory")
+
+
+
+
+
+
+
+
+
 
