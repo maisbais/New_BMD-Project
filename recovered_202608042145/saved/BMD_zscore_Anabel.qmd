@@ -227,7 +227,6 @@ resid_sd <- sqrt(as.numeric(resid_var))
 # Now, obtain the HAZ-adjusted BMD z scores:
 nhanes <- nhanes %>% mutate(z_haz_adj = z_resid / resid_sd)
 
-
 ```
 
 
