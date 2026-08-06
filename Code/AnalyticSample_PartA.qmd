@@ -108,9 +108,9 @@ dexa_raw <- bind_rows(
 )
 
 bmx_raw <- bind_rows(
-  nhanes('BMX_H') %>% select(SEQN, BMXHT),
-  nhanes('BMX_I') %>% select(SEQN, BMXHT),
-  nhanes('BMX_J') %>% select(SEQN, BMXHT)
+  nhanes('BMX_H') %>% select(SEQN, BMXHT, BMXWT),
+  nhanes('BMX_I') %>% select(SEQN, BMXHT, BMXWT),
+  nhanes('BMX_J') %>% select(SEQN, BMXHT, BMXWT)
 )
 ```
 
@@ -366,5 +366,12 @@ nhanes_clean <- nhanes_clean %>%
 
 ```{r}
 # Save master dataset locally
-saveRDS(nhanes_clean, file = here("data", "processed", "nhanes_bmd_pediatric_master.rds"))
+library(here)
+
+# Ensure directory exists relative to the project root
+dir.create(here("data", "processed"), recursive = TRUE, showWarnings = FALSE)
+
+# Save file relative to project root
+saveRDS(nhanes_clean, here("data", "processed", "nhanes_bmd_pediatric_master.rds"))
+
 ```
