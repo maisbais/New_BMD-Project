@@ -32,79 +32,92 @@ nhanes_clean <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_master.r
 
 # This dataset does have some variables created from prior z-score attempts...
 # previously created variables will be checked, if used.
+
+# Remove previous haz variable from old code so as not to be confused in step  1. 
+nhanes_clean <- subset(nhanes_clean, select = -haz)
 ```
 
 # Step 1: create height-adjusted z-scores with package cdcanthro
 
 ```{r}
-# creating an age indicator
-nhanes_clean <- nhanes_clean |> 
-  mutate(
-    age_instudy = case_when(
-      RIDAGEYR >= 0 & RIDAGEYR <= 7 ~ "0", 
-      RIDAGEYR >= 8 & RIDAGEYR <=17 ~ "1", 
-      RIDAGEYR > 17 ~ "0", 
-      TRUE ~ NA_character_) |> 
-  factor(levels = c("0", "1")))
-
-nhanes_clean |> 
-tabyl(RIDAGEYR, age_instudy) # checking to make sure indicator is coded correct
 
 # convert age in years to age in months.
 # there is already a variable in NHANES that has age in months up to 19 y.o
-# it is called RIDEXAGM, however some people in our study pop are missing this var,
-
 sum(is.na(nhanes_clean$RIDEXAGM))
-sum(is.na(nhanes_clean$BMXHT))
-sum(is.na(nhanes_clean$RIDAGEYR))
+# it is called RIDEXAGM, however some ppl in our study pop are missing this var,
 
+sum(is.na(nhanes_clean$BMXHT))
+sum(is.na(nhanes_clean$BMXWT))
+sum(is.na(nhanes_clean$RIDAGEYR))
 # so ill just create a var with RIDAGEYR since missing = 0
+
 nhanes_clean <- nhanes_clean |> 
   mutate(age_months = RIDAGEYR*12 + 6) 
 sum(is.na(nhanes_clean$age_months)) # check, no missing values. 
 
-# use cdcanthro() to calculate haz scores. Because cdcanthro is limited for a certain age range, and we’re not dropping anyone from the original NHANES in order to preserve the weighting, try:
+# use cdcanthro() to calculate haz scores. 
+# Because cdcanthro is limited for a certain age range, 
+# and we’re not dropping anyone from the original NHANES 
+# in order to preserve the weighting, try:
 
-haz_results <- cdcanthro(data=subset(nhanes_clean, age_instudy==1), 
-                         age=age_months, ht = BMXHT)
+# creating an age indicator
+nhanes_clean <- nhanes_clean |> 
+  mutate(
+    age_instudy = case_when(
+      age_months >=0 & age_months < 102 ~ 0,
+      age_months >=102 & age_months <= 210 ~ 1,
+      age_months > 210 ~ 0,
+      TRUE ~ NA_real_
+    ))
 
-# because we have a prior variable called "haz" (from prior attempts), the newly created 
-# variable is called "haz0". 
+haz_results <- cdcanthro::cdcanthro(data= nhanes_clean, 
+                                    age = age_months, 
+                                    ht = BMXHT, 
+                                    wt = BMXWT)
+
+# this gives us various columns with medians of haz, bmi, etc. 
+# so we will restrict to just what we need
+haz_results <- haz_results |> 
+  select("SEQN", "haz")
+
 
 class(haz_results) # check to make sure it is d.f
 
 # left join back to the large data frame
 nhanes_full <- nhanes_clean %>% left_join(haz_results, by= "SEQN")
-# there are duplicate columns in our df now, demarcated by ".x" or ".y"
-# (no prob...)
 
 # checking to see how many HAZ we are missing in our study pop
 nhanes_full %>%
-  group_by(age_instudy.x) %>%
-  summarise(na_count = sum(is.na(haz0)),
-            non_na_count = sum(!is.na(haz0))) 
+  group_by(age_instudy) %>%
+  summarise(na_count = sum(is.na(haz)),
+            non_na_count = sum(!is.na(haz))) 
 # we have 272 people in our study population who are missing a HAZ score. 
 
 nhanes_full %>%
-  group_by(age_instudy.x) %>%
-  summarise(na_count = sum(is.na(BMXHT.x)),
-            non_na_count = sum(!is.na(BMXHT.x))) 
+  group_by(age_instudy) %>%
+  summarise(na_count = sum(is.na(BMXHT)),
+            non_na_count = sum(!is.na(BMXHT))) 
 
 # because we have 272 people who are missing a height... just checking
+
 
 ```
 
 # Step 2: Run Survey design using svydesign() on the updated NHANES data with the haz scores
 
 ```{r}
-# Temporary survey design with the new 'haz0' score
+# Temporary survey design with the new 'haz' score
 library(survey)
 design <- svydesign(
-  id = ~SDMVPSU.x,
-  strata = ~SDMVSTRA.x,
-  weights = ~WTMEC6YR.x,
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
   nest = TRUE,
   data = nhanes_full) 
+
+# here, make sure to apply correct subpop2 (see above); 
+# SUBPOP2 NO LONGER NECESSARY. Only age_instudy
+design_subset <- subset(design, age_instudy == 1)
 
 ```
 
@@ -113,9 +126,9 @@ design <- svydesign(
 ```{r}
 # calculating weighted mean 
 group_mean_stats <- svyby(
-  formula = ~DXDSTBMD.x,
-  by = ~RIDAGEYR.x + RIAGENDR.x,
-  design = design,
+  formula = ~DXDSTBMD,
+  by = ~RIDAGEYR + RIAGENDR,
+  design = design_subset,
   FUN = svymean,
   na.rm = TRUE,
   keep.var = TRUE
@@ -125,16 +138,15 @@ group_mean_stats <- svyby(
 names(group_mean_stats)[3] <- "group_mean" # changing name for [3] of the list
 
 group_mean_stats <- group_mean_stats |>
-  select(RIDAGEYR.x, RIAGENDR.x, group_mean) # removes (se) column
+  select(RIDAGEYR, RIAGENDR, group_mean) # removes (se) column
 
-group_mean_stats # columns exist, although unclear why some ages have means of 0.
-# however, our study pop of interest has means. 
+group_mean_stats # columns exist for our study pop
 
 # calculating weighted SD
 group_var_stats <- svyby(
-  formula = ~DXDSTBMD.x,
-  by = ~RIDAGEYR.x + RIAGENDR.x,
-  design = design,
+  formula = ~DXDSTBMD,
+  by = ~RIDAGEYR + RIAGENDR,
+  design = design_subset,
   FUN = svyvar,
   na.rm = TRUE,
   keep.var = TRUE
@@ -144,13 +156,15 @@ group_var_stats <- svyby(
 names(group_var_stats)[3] <- "group_var" # changing name for [3] of the list
 
 group_var_stats <- group_var_stats |>
-  select(RIDAGEYR.x, RIAGENDR.x, group_var)
+  select(RIDAGEYR, RIAGENDR, group_var)
 
-group_var_stats # columns exist, hard to tell if they look fully OK.
+group_var_stats # columns exist for our study pop
 
 
-# Merge means and variance and calculate SDs by taking the square root of the variance:
-  group_stats <- left_join(group_mean_stats, group_var_stats, by = c("RIDAGEYR.x", "RIAGENDR.x")) %>% mutate(group_sd = sqrt(group_var))
+# Merge means and variance and calculate SDs by taking the sqrt of the variance:
+  group_stats <- left_join(group_mean_stats, group_var_stats, 
+                           by = c("RIDAGEYR", "RIAGENDR")) %>% 
+    mutate(group_sd = sqrt(group_var))
 
 group_stats # I have all the columns (mean, var, and sd)
   
@@ -161,21 +175,22 @@ group_stats # I have all the columns (mean, var, and sd)
 ```{r}
 # merging the df above to the complete NHANES dataset
 nhanes_merge <- left_join(nhanes_full, group_stats, 
-                          by = c("RIDAGEYR.x", 
-                                "RIAGENDR.x")) |> 
+                          by = c("RIDAGEYR", 
+                                "RIAGENDR")) |> 
 
   mutate(z_unadj = 
-           (DXDSTBMD.x - group_mean) / group_sd) # computing unadjusted BMD 
+           (DXDSTBMD - group_mean) / group_sd) # computing unadjusted BMD 
 #and creating new column var 
 
 
 nhanes_merge %>%
-  group_by(age_instudy.x) %>%
+  group_by(age_instudy) %>%
   summarise(na_count = sum(is.na(z_unadj)),
             non_na_count = sum(!is.na(z_unadj))) 
 
 # missing n = 1062 in our age_instudy pop who are missing a z-unadj score. 
 # I'd like to check this and see if the n missing should be this large.
+# will leave as is for now and explore later. 
 
 ```
 
@@ -184,51 +199,139 @@ nhanes_merge %>%
 ```{r}
 # Create a filter indicator for complete unadjusted z-scores (z_unadj variable) (yes/no)
 
-nhanes_merge <- nhanes_merge |> 
-  mutate(
-    z_unadj_cat = if_else(is.na(z_unadj), "no", "yes"))
+#nhanes_merge <- nhanes_merge |> 
+ # mutate(
+  #  z_unadj_cat = if_else(is.na(z_unadj), "no", "yes"))
 
 # what is this indicator variable for? 
 
 # check    
-table(is.na(nhanes_merge$z_unadj), nhanes_merge$z_unadj_cat)
+#table(is.na(nhanes_merge$z_unadj), nhanes_merge$z_unadj_cat)
 # unsure if this indicator variable worked properly
 
 
-#Run your survey design again, applying the indicator for complete unadjusted z scores above.
+#Run your survey design again, applying the indicator for 
+# complete unadjusted z scores above.
 # Let’s call this survey design “design” still.
 design <- svydesign(
-  id = ~SDMVPSU.x,
-  strata = ~SDMVSTRA.x,
-  weights = ~WTMEC6YR.x,
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
   nest = TRUE,
   data = nhanes_merge) 
 
+# here, make sure to apply correct subpop2 (see above)
+# SUBPOP2 IS NOT NECESSARY ANY MORE, only age_instudy
+design_subset <- subset(design, age_instudy == 1)
+
 # Run a linear model: 
-haz_model <- svyglm(z_unadj ~ haz0, design = design) 
+haz_model <- svyglm(z_unadj ~ haz, design = design_subset) 
 # I ran the linear model with the the continuous "z_unadj" rather than indicator.
 
 library(jtools)
 summ(haz_model)
-# for some reason the haz model has 4504 observations which is causing issues with the code lines below. 
+# for some reason the haz model has 4504 observations... OK for now. 
 
 
 # Now, in your NHANES data, create new variables for individual predicted z scores and individual residual from the haz_model above. The residual is the unadjusted z scores minus the predicted
 
-nhanes_merge <- nhanes_merge %>% mutate(
-  z_pred = fitted(haz_model),
-  z_resid = (z_unadj - z_pred))
+# convert the haz_model output to a data frame called mf
+mf <- model.frame(haz_model)
+mf$z_pred <- fitted(haz_model)
+mf$z_resid <- residuals(haz_model)
 
+# because R doesn't give mf data frame from haz_model output the unique SEQN numbers from the original nhanes_merge to merge back to nhanes_merge, BUT it doesn't mess up the order, we need to create temporary version of nhanes_merge that contains the rows that meet the study criteria and has the same numbers of rows with mf. then we bind the columns of mf to this temporary nhanes dataset. we do this because the haz, unadjusted haz and other values are not unique so R will get confused and think one person has multiple values and give these weird .x or .y variables 
+
+nrow(mf)
+# right now this one has 4504 people, so the temporary dataset needs to have these exact individuals (this number may change depending on your subpop2)
+
+# variables that are present in both nhanes_merge and mf
+intersect(names(nhanes_merge), names(mf))
+
+# variables haz and z_unadj are present in both datasets so the nhanes_temp needs to have complete data for both. I do this to get rid of NAs so the ordering of the rows in nhanes_temp is the same as the ordering of mf rows. This is because mf doesn't have SEQN.
+
+nhanes_merge <- nhanes_merge %>%
+  mutate(temp_indicator = case_when(
+    !is.na(haz) & !is.na(z_unadj) ~ 1,
+    TRUE ~ NA_real_
+  ))
+
+
+# create the temporary nhanes dataset
+nhanes_temp <- subset(nhanes_merge, temp_indicator == 1)
+nrow(nhanes_temp)
+
+#yay! the new temporary dataset has the same number of rows with mf
+
+# append columns from mf to nhanes_temp. here, we're only interested in the z_pred and z_resid variables calculated from fitted(haz_model) in steps above. Again, can't merge because mf doesn't have SEQN BUT the ordering of the rows is the same.
+
+nhanes_temp <- bind_cols(
+  nhanes_temp,
+  mf %>% select(z_pred, z_resid)
+)
+
+# select only SEQN, z_pred and z_resid from nhanes_temp
+nhanes_temp <- nhanes_temp %>%
+  select(SEQN, z_pred, z_resid)
+
+
+# now, merge nhanes_temp back to nhanes_merge
+nhanes_merge <- left_join(nhanes_merge,
+                          nhanes_temp,
+                              by="SEQN")
+
+# those that don't meet the age criterion will get NAs
+
+# here, I'm going to create an indicator for complete data on z_pred and z_resid because when I ran it svyvar() without it, the function reads the NA and gave NA results for variance and SD.
+
+nhanes_merge <- nhanes_merge %>%
+  mutate(z_complete = case_when(
+    !is.na(z_pred) & !is.na(z_resid) ~ 1,
+    TRUE ~ NA_real_
+  ))
+
+#create last_step to add that z_complete filter in
+nhanes_merge <- nhanes_merge %>%
+  mutate(last_step = case_when(
+    age_instudy == 1 & z_complete == 1 ~ 1,
+    TRUE ~ NA_real_
+  ))
 
 # Run your survey design again since you just created new variables – for simplicity I still call it “design” for now.
+design <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_merge) 
+
+# here, apply the last_step indicator above--but still check if subpop2 was appropriate in farther steps above
+design_subset <- subset(design, last_step == 1)
 
 
 # Get the variance of the residual z scores to calculate their SD
-resid_var <- svyvar(~z_resid, design = design)
+resid_var <- svyvar(~z_resid, design = design_subset)
+resid_var
+# yay! valid variance and SE
 
 resid_sd <- sqrt(as.numeric(resid_var))
+resid_sd
+# yay! valid SD
+
+# now we have to extract that resid_sd value back to nhanes_merge!
+nhanes_merge <- nhanes_merge %>%
+  mutate(residual_sd = sqrt(as.numeric(resid_var)))
 
 # Now, obtain the HAZ-adjusted BMD z scores:
-nhanes <- nhanes %>% mutate(z_haz_adj = z_resid / resid_sd)
+nhanes_merge <- nhanes_merge %>% 
+  mutate(z_haz_adj = z_resid / residual_sd)
+
+# YAY! WE DID IT!!
+
+# checking to see n value for age_instudy var. 
+nhanes_merge %>%
+  group_by(age_instudy) %>%
+  summarise(na_count = sum(is.na(z_haz_adj)),
+            non_na_count = sum(!is.na(z_haz_adj))) 
 
 ```
