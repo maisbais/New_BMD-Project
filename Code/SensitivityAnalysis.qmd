@@ -43,7 +43,7 @@ nhanes_design_full <- svydesign(
 
 #Define Subpopulation Eligible for Physical Activity
 # Restrict to primary analytic subpop AND those eligible for the PA question (pa_ineligible_flag == 0)
-pa_sens_design <- subset(nhanes_design_full, subpop1 == 1 & pa_ineligible_flag == 0)
+pa_sens_design <- subset(nhanes_design_full, subpop1 == 1 & pa_ineligible_flag == 0 & cycle == "J")
 
 #Run Models on PA-Eligible Subpop
 

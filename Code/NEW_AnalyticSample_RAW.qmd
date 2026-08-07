@@ -286,3 +286,21 @@ nhanes_clean <- nhanes_clean %>%
 # Save master dataset locally
 saveRDS(nhanes_clean, file = here("data", "processed", "nhanes_bmd_pediatric_master_rawoutcome.rds"))
 ```
+
+```{r}
+#verifying count within cycle J
+nhanes_newvars %>%
+  filter(cycle == "J") %>%
+  count()
+nhanes_newvars %>%
+  filter(subpop1 == 1 & cycle == "J") %>%
+  count()
+
+nhanes_newvars %>%
+  filter(subpop1 == 1 & pa_ineligible_flag == 0 & cycle == "J") %>%
+  count()
+nhanes_newvars %>%
+  filter(subpop1 == 1 & pa_ineligible_flag == 1 & cycle == "J") %>%
+  count()
+
+```
