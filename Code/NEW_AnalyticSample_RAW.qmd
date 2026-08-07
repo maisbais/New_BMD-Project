@@ -134,11 +134,8 @@ parent_edu = case_when(
     paq706_eligible_HI = ifelse(cycle %in% c("H", "I") & RIDAGEYR <= 15, 1, 0),
     
     # Eligible to have been asked PAQ706 under the 2017-2018 design (age cap 17)
-    paq706_eligible_J = ifelse(cycle == "J" & RIDAGEYR <= 17, 1, 0),
+    paq706_eligible = ifelse(cycle == "J" & RIDAGEYR <= 17, 1, 0),
     
-    # Combined eligibility, regardless of which cycle rule applies
-    paq706_eligible = ifelse(paq706_eligible_HI == 1 | paq706_eligible_J == 1, 1, 0),
-
     # Clean PAQ706 (days per week active >=60 min), same refused/don't-know
     pa_days = case_when(
       PAQ706 %in% c(77, 99) ~ NA_real_,
@@ -146,9 +143,7 @@ parent_edu = case_when(
     ),
     
     # Missing-indicators for participants who weren't asked PA question purely due to survey design and change
-    pa_ineligible_flag = ifelse(paq706_eligible == 0, 1, 0),
-    pa_days_recode = ifelse(paq706_eligible == 0, 0, pa_days)
-  )
+    pa_ineligible_flag = ifelse(paq706_eligible == 0, 1, 0) )
 ```
 
 ```{r}
