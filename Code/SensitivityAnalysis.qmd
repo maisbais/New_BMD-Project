@@ -31,6 +31,58 @@ nhanes_design_full <- svydesign(
 subpop_design <- subset(nhanes_design_full, subpop1 == 1)
 ```
 
+# New Version
+
+```{r}
+nhanes_design_full <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_newvars)
+
+#Define Subpopulation Eligible for Physical Activity
+# Restrict to primary analytic subpop AND those eligible for the PA question (pa_ineligible_flag == 0)
+pa_sens_design <- subset(nhanes_design_full, subpop1 == 1 & pa_ineligible_flag == 0)
+
+#Run Models on PA-Eligible Subpop
+
+# MALES 
+# Model A: Without PA (Baseline model within the PA-eligible subpopulation)
+male_model_no_pa <- svyglm(
+  DXDSTBMD ~ factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT,
+  design = subset(pa_sens_design, RIAGENDR == "Male")
+)
+
+# Model B: With PA added
+male_model_with_pa <- svyglm(
+  DXDSTBMD ~ factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT + pa_days,
+  design = subset(pa_sens_design, RIAGENDR == "Male")
+)
+
+summary(male_model_no_pa)
+summary(male_model_with_pa)
+
+
+# FEMALES
+# Model A: Without PA (Baseline model within the PA-eligible subpopulation)
+female_model_no_pa <- svyglm(
+  DXDSTBMD ~ factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT,
+  design = subset(pa_sens_design, RIAGENDR == "Female")
+)
+
+# Model B: With PA added
+female_model_with_pa <- svyglm(
+  DXDSTBMD ~ factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT + pa_days,
+  design = subset(pa_sens_design, RIAGENDR == "Female")
+)
+
+summary(female_model_no_pa)
+summary(female_model_with_pa)
+```
+
+# Old Version
+
 ```{r}
 # Sensitivity analysis with physical activity added
 # Indicators added in part A to account for survey design change
@@ -64,5 +116,6 @@ full_female_model <- svyglm(
   design = subset(subpop_design, RIAGENDR == "Female"))
 
 summary(full_female_model)
-
 ```
+
+# 
