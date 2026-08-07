@@ -109,8 +109,11 @@ nhanes_clean <- master_raw %>%
       PAQ715 %in% c(77, 99) ~ NA_real_,
       TRUE ~ as.numeric(PAQ715)
     ),
-    total_screen_time = tv_hours + comp_hours,
-    parent_edu = case_when(
+total_screen_time = case_when(
+  is.na(tv_hours) & is.na(comp_hours) ~ NA_real_,
+  TRUE ~ rowSums(cbind(tv_hours, comp_hours), na.rm = TRUE)
+),
+parent_edu = case_when(
       # Check 2013-2016 Waves (DMDHREDU) using text matching or numeric codes
       !is.na(DMDHREDU) & (as.character(DMDHREDU) %in% c("1", "2", "Less than 9th grade", "9-11th grade (Includes 12th grade with no diploma)") | as.numeric(DMDHREDU) %in% c(1, 2)) ~ "Less than High School",
       !is.na(DMDHREDU) & (as.character(DMDHREDU) %in% c("3", "4", "High school graduate/GED or equivalent", "Some college or AA degree") | as.numeric(DMDHREDU) %in% c(3, 4)) ~ "High School / Some College",
