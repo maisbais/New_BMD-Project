@@ -116,6 +116,7 @@ full_female_model <- svyglm(
   design = subset(subpop_design, RIAGENDR == "Female"))
 
 summary(full_female_model)
+#ignore
 ```
 
 # 

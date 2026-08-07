@@ -302,5 +302,5 @@ nhanes_newvars %>%
 nhanes_newvars %>%
   filter(subpop1 == 1 & pa_ineligible_flag == 1 & cycle == "J") %>%
   count()
-
+#ignore
 ```
