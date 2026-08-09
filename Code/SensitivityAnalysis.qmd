@@ -82,6 +82,9 @@ female_model_with_pa <- svyglm(
 summary(female_model_no_pa)
 summary(female_model_with_pa)
 ```
+
+# Tables
+
 ```{r}
 # Tables
 
@@ -97,7 +100,7 @@ tbl_male_compare <- tbl_merge(
   ),
   tab_spanner = c("**Main Model**", "**+ Physical Activity**")
 ) |> as_gt() |> 
-  tab_header(title = "Table A1: Sensitivity Comparison of Physical Activity: Males") |>
+  tab_header(title = "Table A2: Sensitivity Comparison of Physical Activity: Males") |>
   tab_footnote(footnote = "Sensitivity model additionally adjusts for physical activity (days/week ≥60 min activity. Sensitivity analysis only examines cycle J wave data to ensure age criteria is met. Screen time quartile 1 (lowest) served as reference category.\nAbbreviation: CI = Confidence Interval")
 
 tbl_male_compare
@@ -114,10 +117,18 @@ tbl_female_compare <- tbl_merge(
   ),
   tab_spanner = c("**Main Model**", "**+ Physical Activity**")
 ) |> as_gt() |> 
-  tab_header(title = "Table A2: Sensitivity Comparison of Physical Activity: Females") |>
+  tab_header(title = "Table A3: Sensitivity Comparison of Physical Activity: Females") |>
   tab_footnote(footnote = "Sensitivity model additionally adjusts for physical activity (days/week ≥60 min activity. Sensitivity analysis only examines cycle J wave data to ensure age criteria is met. Screen time quartile 1 (lowest) served as reference category.\nAbbreviation: CI = Confidence Interval")
 
 tbl_female_compare
+```
+
+# Save Tables
+
+```{r}
+gt::gtsave(tbl_male_compare, filename = "TableA2_male_compare.png") #save combined as png
+gt::gtsave(tbl_female_compare, filename = "TableA3_female_compare.png") 
+
 ```
 
 # Old Version
@@ -161,5 +172,3 @@ summary(full_female_model)
 ```
 
 # 
-
-

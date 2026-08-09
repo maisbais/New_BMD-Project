@@ -196,7 +196,7 @@ label(nhanes_newvars$parent_edu) <- "Parent Education"
 label(nhanes_newvars$RIDAGEYR) <- "Age (Years)"
 label(nhanes_newvars$fsdch_2cat) <- "Food Security Status"
 label(nhanes_newvars$age_cat) <- "Age Group"
-label(nhanes_newvars$pa_days_recode) <- "Days Physically Active"
+#label(nhanes_newvars$pa_days_recode) <- "Days Physically Active"
 
 
 
@@ -285,7 +285,7 @@ t1_female
 t1_male_comb <- tbl_svysummary(
   data = design_males,
   by = screen_quart,
-  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat, pa_days_recode),
+  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     total_screen_time ~ "{mean} ({mean.std.error})",
@@ -310,7 +310,7 @@ t1_male_comb <- tbl_svysummary(
 t1_female_comb <- tbl_svysummary(
   data = design_females,
   by = screen_quart,
-  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat, pa_days_recode),
+  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     total_screen_time ~ "{mean} ({mean.std.error})",
@@ -408,7 +408,7 @@ table_missingness <- tbl_svysummary(
   modify_header(label ~ "**Characteristic**") %>%
   modify_spanning_header(all_stat_cols() ~ "**Inclusion Status**") %>%
   modify_caption(
-    caption = "Supplemental Table A3: Descriptive Comparison of Eligible Participants Included in Analytic Sample vs. Excluded Due to Missing Data"
+    caption = "Supplemental Table A1: Descriptive Comparison of Eligible Participants Included in Analytic Sample vs. Excluded Due to Missing Data"
   ) %>%
   modify_footnote(all_stat_cols() ~ NA) %>%
   as_gt() %>%
@@ -440,7 +440,7 @@ saveRDS(nhanes_newvars, file = here("data", "processed", "nhanes_bmd_pediatric_n
 ## Overall Table (Total column)
 t1_total_comb <- tbl_svysummary(
   data = subpop_design,   # your full survey design object
-  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat, pa_days_recode),
+  include = c(total_screen_time, RIDAGEYR, age_cat, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     total_screen_time ~ "{mean} ({mean.std.error})",
