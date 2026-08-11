@@ -335,3 +335,76 @@ nhanes_merge %>%
             non_na_count = sum(!is.na(z_haz_adj))) 
 
 ```
+
+# Checking the Z-score Variable `z_haz_adj`
+## Creating a weighted Histogram
+
+```{r}
+# re-doing survey weight to include z_haz_adj
+
+design <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_merge) 
+
+design_subset <- subset(design, last_step == 1) # last step is an indicator
+# variable for age_instudy and z_complete (residual and predicted value present)
+
+# checking it with the 'design'
+svyhist(~z_haz_adj, design = design, breaks = 30)
+
+# checking it with the 'design_subset' 
+svyhist(~z_haz_adj, design = design_subset, breaks = 30)
+
+# it appears to appear about the same and appears to be a normal distribution
+# around 0. 
+
+
+```
+
+## checking min, max, and mean
+```{r}
+svymean(~z_haz_adj, design = design_subset) # weighted mean and SE of 
+# adjusted z-score
+
+svymean(~z_haz_adj, design = design, na.rm = TRUE) # same as above
+
+# SE is 0.0528; will calculate SD for z-score
+0.0528 * (sqrt(4504))
+
+library(mosaic)
+attach(nhanes_merge)
+favstats(z_haz_adj[last_step==1]) # min and max of z-score
+
+svymean(~haz, design = design_subset) # weighted mean and SE of haz
+
+# SE is 0.0214; will calculate SD for haz
+0.0214 * (sqrt(4504))
+
+favstats(haz[last_step==1]) # min and max of haz 
+
+```
+
+## Evaluating the normality of the residuals 
+```{r}
+
+##Evaluation of distribution of the haz_model from code chunk 9 with QQ plot
+# linear regression
+haz_check <- svyglm(z_haz_adj ~ haz, design = design_subset) 
+
+#augment to extract residuals (.resid)
+library(broom)
+aug_check <- augment(haz_check)
+glimpse(aug_check)
+
+#creating QQ plot
+ggplot(aug_check, 
+       aes(sample = .resid)) + 
+  stat_qq() + 
+  stat_qq_line()
+
+```
+
+
