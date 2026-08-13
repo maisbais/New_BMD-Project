@@ -352,14 +352,11 @@ design <- svydesign(
 design_subset <- subset(design, last_step == 1) # last step is an indicator
 # variable for age_instudy and z_complete (residual and predicted value present)
 
-# checking it with the 'design'
-svyhist(~z_haz_adj, design = design, breaks = 30)
 
 # checking it with the 'design_subset' 
 svyhist(~z_haz_adj, design = design_subset, breaks = 30)
 
-# it appears to appear about the same and appears to be a normal distribution
-# around 0. 
+# it appears to be a normal distribution around 0. 
 
 
 ```
@@ -390,7 +387,7 @@ favstats(haz[last_step==1]) # min and max of haz
 ## Evaluating the normality of the residuals 
 ```{r}
 
-##Evaluation of distribution of the haz_model from code chunk 9 with QQ plot
+##Evaluation of distribution of the haz-adjusted model with QQ plot
 # linear regression
 haz_check <- svyglm(z_haz_adj ~ haz, design = design_subset) 
 
@@ -404,6 +401,11 @@ ggplot(aug_check,
        aes(sample = .resid)) + 
   stat_qq() + 
   stat_qq_line()
+
+# Per, Dr. Nicky Wakim's Slides from BSTA 512 this QQ plot looks most like 
+# a normal distribution with more weights in the tails. 
+
+
 
 ```
 
