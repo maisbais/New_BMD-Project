@@ -129,21 +129,30 @@ parent_edu = case_when(
     
     age_band = floor(RIDEXAGM / 12),
 
-    # --- NEW: Physical activity eligibility indicators & PA variable ---
-    # Eligible to have been asked PAQ706 under the 2013-2016 design (age cap 15)
-    paq706_eligible_HI = ifelse(cycle %in% c("H", "I") & RIDAGEYR <= 15, 1, 0),
+# --- UPDATED: Physical activity eligibility & cleaning ---
     
-    # Eligible to have been asked PAQ706 under the 2017-2018 design (age cap 17)
-    paq706_eligible = ifelse(cycle == "J" & RIDAGEYR <= 17, 1, 0),
-    
-    # Clean PAQ706 (days per week active >=60 min), same refused/don't-know
-    pa_days = case_when(
-      PAQ706 %in% c(77, 99) ~ NA_real_,
-      TRUE ~ as.numeric(PAQ706)
+    # Flag survey eligibility based on NHANES protocols:
+    # Cycles H & I (2013-2016): Asked of ages 12–19
+    # Cycle J (2017-2018): Asked of ages 12–17
+    paq706_eligible = case_when(
+      cycle %in% c("H", "I") & RIDAGEYR >= 12 & RIDAGEYR <= 19 ~ 1,
+      cycle == "J"           & RIDAGEYR >= 12 & RIDAGEYR <= 17 ~ 1,
+      TRUE ~ 0
     ),
     
-    # Missing-indicators for participants who weren't asked PA question purely due to survey design and change
-    pa_ineligible_flag = ifelse(paq706_eligible == 0, 1, 0) )
+    # 2. Clean PAQ706 (Days per week active >= 60 min)
+    # 8 = None (0 days)
+    # 77, 99, 9 = Refused / Don't Know / Special Missing -> NA
+    pa_days = case_when(
+      PAQ706 == 8 ~ 0,
+      PAQ706 %in% c(9, 77, 99) ~ NA_real_,
+      PAQ706 >= 1 & PAQ706 <= 7 ~ as.numeric(PAQ706),
+      TRUE ~ NA_real_
+    ),
+    
+    # 3. Flag ineligibility due to survey design
+    pa_ineligible_flag = if_else(paq706_eligible == 0, 1, 0)
+  )
 ```
 
 ```{r}
@@ -288,6 +297,7 @@ saveRDS(nhanes_clean, file = here("data", "processed", "nhanes_bmd_pediatric_mas
 ```
 
 ```{r}
+#| eval: false
 #verifying count within cycle J
 nhanes_newvars %>%
   filter(cycle == "J") %>%
@@ -302,5 +312,5 @@ nhanes_newvars %>%
 nhanes_newvars %>%
   filter(subpop1 == 1 & pa_ineligible_flag == 1 & cycle == "J") %>%
   count()
-#ignore
+ignore
 ```
