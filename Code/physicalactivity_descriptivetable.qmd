@@ -1,0 +1,84 @@
+---
+title: "descriptive_physicalactivity"
+format: html
+editor: visual
+---
+
+```{r}
+# Load libraries 
+library(gtsummary)
+library(rstatix)
+library(jtools)
+library(tidyverse)
+library(dplyr)
+library(here)
+library(haven)
+library(psych)
+library(janitor)
+library(survey)
+library(Hmisc)
+library(gt)
+library(modelsummary)
+
+# Analytic dataset 
+nhanes_newvars <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome.rds"))
+```
+```{r}
+## Table 1 - Physical Activity Sensitivity Subpopulation (2017-2018 cycle only) ##
+
+# Uncomment/add label for physical activity variable
+label(nhanes_newvars$pa_days) <- "Days Physically Active (per week)"
+
+# Rebuild the survey design and restrict to the PA sensitivity subpopulation
+nhanes_design_full <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_newvars)
+
+pa_sens_design <- subset(nhanes_design_full, subpop1 == 1 & pa_ineligible_flag == 0 & cycle == "J")
+
+design_males_pa   <- subset(pa_sens_design, RIAGENDR %in% c("Male", "male", 1))
+design_females_pa <- subset(pa_sens_design, RIAGENDR %in% c("Female", "female", 2))
+
+t1_male_pa <- tbl_svysummary(
+  data = design_males_pa,
+  by = screen_quart,
+  include = c(pa_days),
+  missing = "no",
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"),
+  digits = list(all_categorical() ~ c(0, 1))
+) %>%
+  modify_header(stat_1 ~ "**Q1**<br>(&le; 4 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_2 ~ "**Q2**<br>(> 4 hours to &le; 6 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_3 ~ "**Q3**<br>(> 6 hours to &le; 9 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_4 ~ "**Q4**<br>(> 9 hours)<br>N = {n_unweighted}") %>%
+  modify_footnote(all_stat_cols() ~ NA)
+
+t1_female_pa <- tbl_svysummary(
+  data = design_females_pa,
+  by = screen_quart,
+  include = c(pa_days),
+  missing = "no",
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"),
+  digits = list(all_categorical() ~ c(0, 1))
+) %>%
+  modify_header(stat_1 ~ "**Q1**<br>(&le; 4 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_2 ~ "**Q2**<br>(> 4 hours to &le; 6 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_3 ~ "**Q3**<br>(> 6 hours to &le; 9 hours)<br>N = {n_unweighted}") %>%
+  modify_header(stat_4 ~ "**Q4**<br>(> 9 hours)<br>N = {n_unweighted}") %>%
+  modify_footnote(all_stat_cols() ~ NA)
+
+t1_pa_combined <- tbl_merge(
+  tbls = list(t1_male_pa, t1_female_pa),
+  tab_spanner = c("**Males**", "**Females**")
+) %>%
+  modify_caption(caption = "Table A2. Physical activity by daily screen time quartile among U.S. children in the 2017-2018 NHANES cycle, stratified by sex") %>%
+  as_gt() %>%
+  gt::tab_source_note(source_note = "Categorical variable presented as unweighted n (weighted %). Restricted to participants in the 2017-2018 NHANES cycle eligible to answer the physical activity questionnaire item (PAQ706).")
+
+t1_pa_combined
+
+gt::gtsave(t1_pa_combined, filename = here("Code", "PA_Descriptivetable.png")) #save combined as png
+```

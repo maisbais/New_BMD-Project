@@ -196,7 +196,7 @@ label(nhanes_newvars$parent_edu) <- "Parent Education"
 label(nhanes_newvars$RIDAGEYR) <- "Age (Years)"
 label(nhanes_newvars$fsdch_2cat) <- "Food Security Status"
 label(nhanes_newvars$age_cat) <- "Age Group"
-label(nhanes_newvars$pa_days) <- "Days Physically Active"
+#label(nhanes_newvars$pa_days) <- "Days Physically Active"
 
 
 
@@ -225,7 +225,7 @@ library(dplyr)
 t1_male <- tbl_svysummary(
   data = design_males,
   by = screen_quart,
-  include = c(RIDAGEYR, pa_days, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
+  include = c(RIDAGEYR,RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     all_continuous() ~ "{mean} ({mean.std.error})", # using Mean and SE for all contin vars
@@ -428,9 +428,7 @@ gt::gtsave(table_missingness, filename = "table_missingness.png") #save male as 
 ```{r}
 #saving a datafile with the new variables created, such as binary food security locally
 # UPDATED: filename now flags this as the raw-outcome version
-saveRDS(nhanes_newvars, file = here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome1.rds"))
-
-
+saveRDS(nhanes_newvars, file = here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome.rds"))
 ```
 
 ```{r}
@@ -483,5 +481,7 @@ gt::gtsave(t1_combined_full, filename = "Table1_Combined.png") #save combined as
 
 ```
 
-```         
+```{r}
+#| eval: false
+file.info(here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome.rds"))$mtime
 ```
