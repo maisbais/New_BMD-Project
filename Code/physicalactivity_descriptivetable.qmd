@@ -74,9 +74,11 @@ t1_pa_combined <- tbl_merge(
   tbls = list(t1_male_pa, t1_female_pa),
   tab_spanner = c("**Males**", "**Females**")
 ) %>%
-  modify_caption(caption = "Table X. Physical activity by daily screen time quartile among U.S. children in the 2017-2018 NHANES cycle, stratified by sex") %>%
+  modify_caption(caption = "Table A2. Physical activity by daily screen time quartile among U.S. children in the 2017-2018 NHANES cycle, stratified by sex") %>%
   as_gt() %>%
   gt::tab_source_note(source_note = "Continuous variable presented as weighted mean (SE). Restricted to participants in the 2017-2018 NHANES cycle eligible to answer the physical activity questionnaire item (PAQ706).")
 
 t1_pa_combined
+
+gt::gtsave(t1_pa_combined, filename = here("Code", "PA_Descriptivetable.png")) #save combined as png
 ```
