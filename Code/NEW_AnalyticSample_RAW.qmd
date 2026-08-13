@@ -134,7 +134,7 @@ parent_edu = case_when(
     # Flag survey eligibility based on NHANES protocols:
     # Cycles H & I (2013-2016): Asked of ages 12–19
     # Cycle J (2017-2018): Asked of ages 12–17
-    paq706_eligible = case_when(
+paq706_eligible = case_when(
       cycle %in% c("H", "I") & RIDAGEYR >= 12 & RIDAGEYR <= 19 ~ 1,
       cycle == "J"           & RIDAGEYR >= 12 & RIDAGEYR <= 17 ~ 1,
       TRUE ~ 0
@@ -143,16 +143,14 @@ parent_edu = case_when(
     # 2. Clean PAQ706 (Days per week active >= 60 min)
     # 8 = None (0 days)
     # 77, 99, 9 = Refused / Don't Know / Special Missing -> NA
-    pa_days = case_when(
-      PAQ706 == 8 ~ 0,
-      PAQ706 %in% c(9, 77, 99) ~ NA_real_,
-      PAQ706 >= 1 & PAQ706 <= 7 ~ as.numeric(PAQ706),
-      TRUE ~ NA_real_
-    ),
-    
-    # 3. Flag ineligibility due to survey design
-    pa_ineligible_flag = if_else(paq706_eligible == 0, 1, 0)
-  )
+pa_days = case_when(
+  PAQ706 %in% c("Don't know", "Refused") ~ NA_real_,
+  TRUE ~ as.numeric(str_extract(as.character(PAQ706), "^[0-7]"))
+),
+
+# 3. Flag ineligibility due to survey design
+pa_ineligible_flag = if_else(paq706_eligible == 0, 1, 0)
+)
 ```
 
 ```{r}
