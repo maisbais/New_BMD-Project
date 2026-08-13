@@ -428,9 +428,7 @@ gt::gtsave(table_missingness, filename = "table_missingness.png") #save male as 
 ```{r}
 #saving a datafile with the new variables created, such as binary food security locally
 # UPDATED: filename now flags this as the raw-outcome version
-saveRDS(nhanes_newvars, file = here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome1.rds"))
-
-
+saveRDS(nhanes_newvars, file = here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome.rds"))
 ```
 
 ```{r}
@@ -483,5 +481,6 @@ gt::gtsave(t1_combined_full, filename = "Table1_Combined.png") #save combined as
 
 ```
 
-```         
+```{r}
+file.info(here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome.rds"))$mtime
 ```
