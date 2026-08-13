@@ -1051,8 +1051,5 @@ stacked_female_table
 # attempting to save the table 
 gt::gtsave(stacked_female_table, filename = "Table5_Females.png") #save male as png
 
-
-
-
 ```
 
