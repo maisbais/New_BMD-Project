@@ -196,7 +196,7 @@ label(nhanes_newvars$parent_edu) <- "Parent Education"
 label(nhanes_newvars$RIDAGEYR) <- "Age (Years)"
 label(nhanes_newvars$fsdch_2cat) <- "Food Security Status"
 label(nhanes_newvars$age_cat) <- "Age Group"
-label(nhanes_newvars$pa_days) <- "Days Physically Active"
+#label(nhanes_newvars$pa_days) <- "Days Physically Active"
 
 
 
@@ -225,7 +225,7 @@ library(dplyr)
 t1_male <- tbl_svysummary(
   data = design_males,
   by = screen_quart,
-  include = c(RIDAGEYR, pa_days, RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
+  include = c(RIDAGEYR,RIDRETH3, fpl_cat, parent_edu, fsdch_2cat),
   missing = "no",
   statistic = list(
     all_continuous() ~ "{mean} ({mean.std.error})", # using Mean and SE for all contin vars
