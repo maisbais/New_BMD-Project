@@ -482,5 +482,6 @@ gt::gtsave(t1_combined_full, filename = "Table1_Combined.png") #save combined as
 ```
 
 ```{r}
+#| eval: false
 file.info(here("data", "processed", "nhanes_bmd_pediatric_newvars_rawoutcome.rds"))$mtime
 ```
