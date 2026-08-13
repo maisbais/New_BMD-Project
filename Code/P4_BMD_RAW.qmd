@@ -25,28 +25,27 @@ library(here)
 library(broom)
 
 #dataset from P3_PartC
-nhanes_newvars<- readRDS(here("data", "processed", "nhanes_bmd_pediatric_newvars.rds"))
-
+nhanes_screen <- readRDS("C:/Users/anabe/OneDrive/Desktop/New_BMD-Project/data/processed/nhanes_bmd_pediatric_newvars_rawoutcome1.rds")
 ```
 
 ## Examination of Outcome from Part C + Graphical Visualization
 
 ```{r}
 # setting male analytic sample
-subpop_male <- subset(nhanes_newvars, 
+subpop_male <- subset(nhanes_screen, 
                  subpop1 ==1 & RIAGENDR =="Male")
 
 # setting female analytic sample
-subpop_female <- subset(nhanes_newvars, subpop1 ==1 & RIAGENDR =="Female")
+subpop_female <- subset(nhanes_screen, subpop1 ==1 & RIAGENDR =="Female")
 
-attach(nhanes_newvars) 
+attach(nhanes_screen) 
 
 ## Primary survey design 
 nhanes_design_full <- svydesign(id = ~SDMVPSU, 
                                 strata = ~SDMVSTRA, 
                                 weights= ~WTMEC6YR, 
                                 nest = TRUE, 
-                                data = nhanes_newvars)
+                                data = nhanes_screen)
 
 # Isolating general analytic subpop
 
@@ -139,7 +138,7 @@ ggplot(subpop_female,
 ## Normality##
 ##Evaluation of distribution of outcome with QQ plot among male subpop
 # linear regression
-model_male <- svyglm(DXDSTBMD~screen_quart, 
+model_male <- svyglm(DXDSTBMD~factor(screen_quart), 
                      design = subset(subpop_design, RIAGENDR =="Male"))
 
 #augment to extract residuals (.resid)
@@ -154,7 +153,7 @@ ggplot(aug_male,
 
 ##Evaluation of distribution of outcome with QQ plot among female subpop
 # linear regression
-model_female <- svyglm(DXDSTBMD~screen_quart, 
+model_female <- svyglm(DXDSTBMD~factor(screen_quart), 
                      design = subset(subpop_design, RIAGENDR =="Female"))
 
 #augment to extract residuals (.resid)
@@ -169,8 +168,6 @@ ggplot(aug_female,
 
 ```
 
-\`\`
-
 ## Visualization of Linearity of other Continuous Independent Variables
 
 ### Age as a Continuous Variable
@@ -178,7 +175,7 @@ ggplot(aug_female,
 ```{r}
 ## Age as a Continuous Variable ##
 # creating a scatterplot in male subpop
-nhanes_newvars%>% 
+nhanes_screen%>% 
   filter(subpop1==1 & RIAGENDR =="Male")  %>% 
   ggplot(aes(x = RIDAGEYR, 
              y = DXDSTBMD)) + 
@@ -187,7 +184,7 @@ nhanes_newvars%>%
       y = "BMD Raw Score")
 
 # overlaying a LOESS (locally weighted regression) plot
-nhanes_newvars%>% 
+nhanes_screen%>% 
   filter(subpop1==1 & RIAGENDR =="Male")  %>% 
   ggplot(aes(x = RIDAGEYR, 
              y = DXDSTBMD)) +
@@ -229,7 +226,7 @@ ggplot(data = aug_age,
 svymean(~RIDAGEYR, design = subpop_design) # weighted mean = 12.482
 
 # create centered variables
-nhanes_newvars <- nhanes_newvars %>% 
+nhanes_screen <- nhanes_screen %>% 
   mutate(agec = RIDAGEYR - 12.482, 
          agec_sq = agec^2, 
          agec_cu = agec^3)
@@ -241,7 +238,7 @@ nhanes_design_quad <- svydesign(
   strata = ~SDMVSTRA,
   weights = ~WTMEC6YR,
   nest = TRUE,
-  data = nhanes_newvars)
+  data = nhanes_screen)
 
 # setting analytic sample
 subpop_quad <- subset(nhanes_design_quad, 
@@ -294,7 +291,7 @@ gladder(subpop_male$RIDAGEYR) # looking to see if age should be transformed
 ```{r}
 ###### Poverty Income Ratio (PIR) as a Continuous Variable #####
 # creating a scatterplot in male subpop
-nhanes_newvars%>% 
+nhanes_screen%>% 
   filter(subpop1==1 & RIAGENDR =="Male")  %>% 
   ggplot(aes(x = INDFMPIR, 
              y = DXDSTBMD)) + 
@@ -304,7 +301,7 @@ nhanes_newvars%>%
       x  = "Poverty Income Ratio (continuous)")
 
 # overlaying a LOESS (locally weighted regression) plot
-nhanes_newvars%>% 
+nhanes_screen%>% 
   filter(subpop1==1 & RIAGENDR =="Male")  %>% 
   ggplot(aes(x = DXDSTBMD, 
              y = INDFMPIR)) +
@@ -342,7 +339,7 @@ ggplot(data = aug_pir,
   theme_classic()
 
 ## Create higher order predictors
-nhanes_newvars <- nhanes_newvars %>% 
+nhanes_screen <- nhanes_screen %>% 
   mutate(pir = INDFMPIR, 
          pir_sq = pir^2, 
          pir_cu = pir^3)
@@ -354,7 +351,7 @@ nhanes_design_quad_pir <- svydesign(
   strata = ~SDMVSTRA,
   weights = ~WTMEC6YR,
   nest = TRUE,
-  data = nhanes_newvars)
+  data = nhanes_screen)
 
 # setting analytic sample
 subpop_quad_pir <- subset(nhanes_design_quad_pir, 
@@ -422,23 +419,23 @@ summary(model_female)
 
 ```{r}
 # need to relevel the race/ethnicity variable
-levels(nhanes_newvars$RIDRETH3)
-class(nhanes_newvars$RIDRETH3)
+levels(nhanes_screen$RIDRETH3)
+class(nhanes_screen$RIDRETH3)
 
-nhanes_newvars <- nhanes_newvars |> 
+nhanes_screen <- nhanes_screen |> 
   mutate(
     race_eth = fct_relevel(RIDRETH3, "Non-Hispanic White")
   )
   
 # checking
-levels(nhanes_newvars$race_eth)
+levels(nhanes_screen$race_eth)
 
 ## resetting the primary survey design 
 nhanes_design_full <- svydesign(id = ~SDMVPSU, 
                                 strata = ~SDMVSTRA, 
                                 weights= ~WTMEC6YR, 
                                 nest = TRUE, 
-                                data = nhanes_newvars)
+                                data = nhanes_screen)
 
 # Isolating analytic subpop
 
@@ -467,45 +464,188 @@ summary(full_female_model)
 
 ```
 
-## Tables of Models
-
+## Creation of Table 2 and Table 3
+### Among Males
 ```{r}
+library(gtsummary)
 library(gt)
-## Among males
-tbl_regression(model_male, label = list(screen_quart = "Screen Quartile"), exponentiate = FALSE, 
-               conf.level = 0.95, conf.int = TRUE) |> as_gt() |> 
-  tab_header(title = "Crude Model- Males")
+library(srvyr)
+library(dplyr)
+library(survey)
 
-tbl_regression(full_male_model, 
-               exponentiate = FALSE, 
-               include = "factor(screen_quart)", 
-               label = list("factor(screen_quart)" = "Screen Quartile"), 
-               conf.level = 0.95, 
-               conf.int = TRUE) |> as_gt() |> 
-  tab_header(title = "Fully Adjusted Model- Males") |> tab_footnote(
-    footnote = "Adjusted for child age, parent education, child race/ethnicity, family poverty income ratio, and child height"
-  )
-               
-## Among females
-tbl_regression(model_female, label = list(screen_quart = "Screen Quartile"), 
-               exponentiate = FALSE, 
-               conf.level = 0.95, 
-               conf.int = TRUE) |> 
-  as_gt() |> 
-  tab_header(title = "Crude Model- Females")
 
-tbl_regression(full_female_model, 
-               exponentiate = FALSE, 
-               include = "factor(screen_quart)", 
-               label = list("factor(screen_quart)" = "Screen Quartile"),  
-               conf.level = 0.95, 
-               conf.int = TRUE) |> 
-  as_gt() |> 
-  tab_header(title = "Fully Adjusted Model- Females") |> tab_footnote(
-    footnote = "Adjusted for child age, parent education, child race/ethnicity, family poverty income ratio, and child height"
+# 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
+w_pct <- tbl_svysummary(
+  data = subset(subpop_design, RIAGENDR == "Male"), 
+  include = screen_quart, 
+  missing = "no", 
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"), 
+  label = list(screen_quart = "Screen Quartile")
+)
+
+male_design <- subset(nhanes_design_full, subpop1 == 1 & RIAGENDR == "Male")
+
+
+# 2. Mean BMD Table (Vertical Layout)
+# -------------------------------------------------------------
+# Calculate weighted means and SEs by screen_quart
+bmd_by_q <- svyby(~DXDSTBMD, ~screen_quart, male_design, svymean, na.rm = TRUE)
+
+# Create a named lookup vector formatted as "Mean (SE)"
+bmd_lookup <- setNames(
+  sprintf("%.3f (%.3f)", bmd_by_q$DXDSTBMD, bmd_by_q$se),
+  as.character(bmd_by_q$screen_quart)
+)
+
+# Copy w_pct structure and map the Mean (SE) values onto the quartile levels
+m_mean <- w_pct
+m_mean$table_body$stat_0 <- ifelse(
+  m_mean$table_body$row_type == "level",
+  bmd_lookup[as.character(m_mean$table_body$label)],
+  NA_character_
+)
+
+m_mean
+  
+# 3. Unadjusted Regression Table
+t2 <- tbl_regression(
+  model_male, 
+  include = dplyr::everything(),
+  label = list("factor(screen_quart)" = "Screen Quartile"), 
+  exponentiate = FALSE, 
+  conf.level = 0.95, 
+  conf.int = TRUE
+) 
+
+# 4. Adjusted Regression Table
+t3 <- tbl_regression(
+  full_male_model, 
+  exponentiate = FALSE, 
+  include = "factor(screen_quart)", 
+  label = list("factor(screen_quart)" = "Screen Quartile"), 
+  conf.level = 0.95, 
+  conf.int = TRUE
+)
+
+# Harmonize internal variable names to match w_pct ("screen_quart")
+t2$table_body$variable[t2$table_body$variable == "factor(screen_quart)"] <- "screen_quart"
+t3$table_body$variable[t3$table_body$variable == "factor(screen_quart)"] <- "screen_quart"
+
+merged_male_table <- tbl_merge(
+  tbls = list(w_pct, m_mean, t2, t3),
+  tab_spanner = c(
+    "**Sample Size**",
+    "**Mean BMD (SE)**",
+    "**Unadjusted Model**",
+    "**Adjusted Model** <sup>2</sup>"
   )
+) %>%
+  modify_caption(
+    caption = "Table 2. Associations beetween daily average screen time and TBLH BMD raw scores in unadjusted and fully adjusted linear regression models among male children aged 8- 17 y.o (n = 2,044)"
+  ) %>%
+  modify_header(
+    all_stat_cols() ~ "**{level}**<br>N = {n_unweighted}"
+  ) %>%
+  as_gt() %>%
+  gt::tab_source_note(
+    source_note = "² Fully adjusted models were adjusted for age, race/ethnicity, height (in cm), household reference person's education level, and household income evaluated at the federal poverty level."
+  )
+
+merged_male_table
+
+
+# attempting to save the table 
+gt::gtsave(merged_male_table, filename = "Table2_Males.png") #save male as png
+
 
 ```
+
+###  Among Females
+```{r}
+# 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
+w_pct <- tbl_svysummary(
+  data = subset(subpop_design, RIAGENDR == "Female"), 
+  include = screen_quart, 
+  missing = "no", 
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"), 
+  label = list(screen_quart = "Screen Quartile")
+)
+
+
+female_design <- subset(nhanes_design_full, subpop1 == 1 & RIAGENDR == "Female")
+
+# 2. Mean BMD Table (Vertical Layout)
+# -------------------------------------------------------------
+# Calculate weighted means and SEs by screen_quart
+bmd_by_q <- svyby(~DXDSTBMD, ~screen_quart, female_design, svymean, na.rm = TRUE)
+
+# Create a named lookup vector formatted as "Mean (SE)"
+bmd_lookup <- setNames(
+  sprintf("%.3f (%.3f)", bmd_by_q$DXDSTBMD, bmd_by_q$se),
+  as.character(bmd_by_q$screen_quart)
+)
+
+# Copy w_pct structure and map the Mean (SE) values onto the quartile levels
+m_mean <- w_pct
+m_mean$table_body$stat_0 <- ifelse(
+  m_mean$table_body$row_type == "level",
+  bmd_lookup[as.character(m_mean$table_body$label)],
+  NA_character_
+)
+
+m_mean
+  
+# 3. Unadjusted Regression Table
+t2 <- tbl_regression(
+  model_female, 
+  include = dplyr::everything(),
+  label = list("factor(screen_quart)" = "Screen Quartile"), 
+  exponentiate = FALSE, 
+  conf.level = 0.95, 
+  conf.int = TRUE
+) 
+
+# 4. Adjusted Regression Table
+t3 <- tbl_regression(
+  full_female_model, 
+  exponentiate = FALSE, 
+  include = "factor(screen_quart)", 
+  label = list("factor(screen_quart)" = "Screen Quartile"), 
+  conf.level = 0.95, 
+  conf.int = TRUE
+)
+
+# Harmonize internal variable names to match w_pct ("screen_quart")
+t2$table_body$variable[t2$table_body$variable == "factor(screen_quart)"] <- "screen_quart"
+t3$table_body$variable[t3$table_body$variable == "factor(screen_quart)"] <- "screen_quart"
+
+merged_female_table <- tbl_merge(
+  tbls = list(w_pct, m_mean, t2, t3),
+  tab_spanner = c(
+    "**Sample Size**",
+    "**Mean BMD (SE)**",
+    "**Unadjusted Model**",
+    "**Adjusted Model** <sup>2</sup>"
+  )
+) %>%
+  modify_caption(caption = "Table 3. Associations beetween daily average screen time and TBLH BMD raw scores in unadjusted and fully adjusted linear regression models among female children aged 8- 17 y.o (n = 1,953)") %>%
+  modify_header(
+    all_stat_cols() ~ "**{level}**<br>N = {n_unweighted}"
+  ) |> 
+  as_gt() %>%
+  gt::tab_source_note(
+    source_note = "² Fully adjusted models were adjusted for age, race/ethnicity, height (in cm), household reference person's education level, and household income evaluated at the federal poverty level."
+  )
+
+merged_female_table
+
+# attempting to save the table 
+gt::gtsave(merged_female_table, filename = "Table2_Females.png") #save male as png
+
+
+```
+ 
+       
 
 ## Evaluation of Effect Measure Modification Food Security- Interaction
 
@@ -546,51 +686,51 @@ regTermTest(int_female_model, ~factor(screen_quart):factor(fsdch_2cat),
 
 ```{r}
 # looking at levels of food security
-levels(nhanes_newvars$fsdch_2cat)
+levels(nhanes_screen$fsdch_2cat)
 
 
 ### using the same survey specifications and analytic sample as in chunk 2
 ## Among Males with Food Security
-strat_male_fs <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+reg_male_fs <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
                           design = subset(subpop_design, RIAGENDR =="Male"
                                           & fsdch_2cat == "High/Marginal Food Security"))
 
-summary(strat_male_fs) # crude values
+summary(reg_male_fs) # crude values
 
 #confidence interval, counts, p-val, etc 
-summ(strat_male_fs, confint = T) 
+summ(reg_male_fs, confint = T) 
 
 
 ## Among Males with Food Insecurity
-strat_male_fins <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+reg_male_fins <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
                         design = subset(subpop_design, RIAGENDR =="Male"
                                         & fsdch_2cat == "Low/Very Low Food Security"))
 
-summary(strat_male_fins) # crude values
+summary(reg_male_fins) # crude values
 
 #confidence interval, counts, p-val, etc 
-summ(strat_male_fins, confint = T) 
+summ(reg_male_fins, confint = T) 
 
 ## Among Females with Food Security
-strat_female_fs <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+reg_female_fs <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
                         design = subset(subpop_design, RIAGENDR =="Female"
                                         & fsdch_2cat == "High/Marginal Food Security"))
 
-summary(strat_female_fs) # crude values
+summary(reg_female_fs) # crude values
 
 #confidence interval, counts, p-val, etc 
-summ(strat_female_fs, confint = T) 
+summ(reg_female_fs, confint = T) 
 
 
 ## Among Females with Food Insecurity
-strat_female_fins <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
+reg_female_fins <- svyglm(DXDSTBMD~factor(screen_quart) + RIDAGEYR + factor(parent_edu) + factor(race_eth) + INDFMPIR + BMXHT, 
                           design = subset(subpop_design, RIAGENDR =="Female"
                                           & fsdch_2cat == "Low/Very Low Food Security"))
 
-summary(strat_female_fins) # crude values
+summary(reg_female_fins) # crude values
 
 #confidence interval, counts, p-val, etc 
-summ(strat_female_fins, confint = T) 
+summ(reg_female_fins, confint = T) 
 
 
 
@@ -624,3 +764,295 @@ svyby(formula = ~DXDSTBMD,
 
 
 ```
+## Creation of Tables 4 and 5
+### Among Males
+```{r}
+
+# 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
+fs_w_pct <- tbl_svysummary(
+  data = subset(subpop_design, RIAGENDR == "Male" & fsdch_2cat=="High/Marginal Food Security"), 
+  include = screen_quart, 
+  missing = "no", 
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"), 
+  label = list(screen_quart = "Screen Quartile")
+) |> modify_header(stat_0 ~ "")
+
+
+# 2. Mean BMD Table (Vertical Layout)
+# -------------------------------------------------------------
+# Calculate weighted means and SEs by screen_quart
+bmd_by_q <- svyby(~DXDSTBMD, ~screen_quart, subset(subpop_design, RIAGENDR == "Male" & fsdch_2cat=="High/Marginal Food Security"), svymean, na.rm = TRUE)
+
+# Create a named lookup vector formatted as "Mean (SE)"
+bmd_lookup <- setNames(
+  sprintf("%.3f (%.3f)", bmd_by_q$DXDSTBMD, bmd_by_q$se),
+  as.character(bmd_by_q$screen_quart)
+)
+
+# Copy w_pct structure and map the Mean (SE) values onto the quartile levels
+fs_mean <- fs_w_pct
+fs_mean$table_body$stat_0 <- ifelse(
+  fs_mean$table_body$row_type == "level",
+  bmd_lookup[as.character(fs_mean$table_body$label)],
+  NA_character_
+)
+
+fs_mean <- fs_mean |> 
+  modify_header(stat_0 ~ "")
+
+fs_mean
+
+# 4. Adjusted Regression Table
+t4 <- tbl_regression(
+  reg_male_fs, 
+  include = "factor(screen_quart)", 
+  label = list("factor(screen_quart)" = "Screen Quartile"), 
+  conf.level = 0.95, 
+  conf.int = TRUE
+)
+
+# Harmonize internal variable names to match w_pct ("screen_quart")
+t4$table_body$variable[t4$table_body$variable == "factor(screen_quart)"] <- "screen_quart"
+
+strat_male_fs <- tbl_merge(
+  tbls = list(fs_w_pct, fs_mean, t4),
+  tab_spanner = c(
+    "**Sample Size**",
+    "**Mean BMD (SE)**",
+    "**Stratified Model** <sup>3</sup>"
+  )
+) %>%
+  modify_caption(
+    caption = "Table 4. Associations beetween daily average screen time and TBLH BMD raw scores among male children aged 8- 17 y.o stratified by food security status (n = 2,044)"
+  )
+
+strat_male_fs
+
+
+# 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
+fins_w_pct <- tbl_svysummary(
+  data = subset(subpop_design, RIAGENDR == "Male" & fsdch_2cat=="Low/Very Low Food Security"), 
+  include = screen_quart, 
+  missing = "no", 
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"), 
+  label = list(screen_quart = "Screen Quartile")
+)
+
+# 2. Mean BMD Table (Vertical Layout)
+# -------------------------------------------------------------
+# Calculate weighted means and SEs by screen_quart
+bmd_by_q <- svyby(~DXDSTBMD, ~screen_quart, subset(subpop_design, RIAGENDR == "Male" & fsdch_2cat=="High/Marginal Food Security"), svymean, na.rm = TRUE)
+
+# Create a named lookup vector formatted as "Mean (SE)"
+bmd_lookup <- setNames(
+  sprintf("%.3f (%.3f)", bmd_by_q$DXDSTBMD, bmd_by_q$se),
+  as.character(bmd_by_q$screen_quart)
+)
+
+# Copy w_pct structure and map the Mean (SE) values onto the quartile levels
+fins_mean <- fins_w_pct
+fins_mean$table_body$stat_0 <- ifelse(
+  fins_mean$table_body$row_type == "level",
+  bmd_lookup[as.character(fins_mean$table_body$label)],
+  NA_character_
+)
+
+fins_mean
+
+# 4. Adjusted Regression Table
+t5 <- tbl_regression(
+  reg_male_fins, 
+  exponentiate = FALSE, 
+  include = "factor(screen_quart)", 
+  label = list("factor(screen_quart)" = "Screen Quartile"), 
+  conf.level = 0.95, 
+  conf.int = TRUE
+)
+
+# Harmonize internal variable names to match w_pct ("screen_quart")
+t5$table_body$variable[t5$table_body$variable == "factor(screen_quart)"] <- "screen_quart"
+
+strat_male_fins <- tbl_merge(
+  tbls = list(fins_w_pct, fins_mean, t5),
+  tab_spanner = c(
+    "**Sample Size**",
+    "**Mean BMD (SE)**",
+    "**Stratified Model** <sup>3</sup>"
+  )
+) 
+
+
+strat_male_fins
+
+
+# Stack them vertically
+stacked_male_table <- tbl_stack(
+  tbls = list(strat_male_fs, strat_male_fins),
+  group_header = c("Food Secure Males", "Food Insecure Males") # Creates section headers
+) %>%
+  modify_caption(
+    caption = "Table 4. Associations beetween daily average screen time and TBLH BMD raw scores among male children aged 8- 17 y.o stratified by food security status² (n = 2,044)"
+  ) %>% 
+  as_gt() %>%
+  gt::tab_source_note(
+    source_note = "² P-value for omnibus nested F-test (0.42)"
+  ) |> 
+  gt::tab_source_note(
+    source_note = "³ Fully adjusted models were adjusted for age, race/ethnicity, height (in cm), household reference person's education level, and household income evaluated at the federal poverty level."
+  )
+
+stacked_male_table
+
+
+# attempting to save the table 
+gt::gtsave(stacked_male_table, filename = "Table4_Males.png") #save male as png
+
+
+```
+
+### Among Females
+```{r}
+# 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
+fs_w_pct <- tbl_svysummary(
+  data = subset(subpop_design, RIAGENDR == "Female" & fsdch_2cat=="High/Marginal Food Security"), 
+  include = screen_quart, 
+  missing = "no", 
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"), 
+  label = list(screen_quart = "Screen Quartile")
+) |> modify_header(stat_0 ~ "")
+
+
+# 2. Mean BMD Table (Vertical Layout)
+# -------------------------------------------------------------
+# Calculate weighted means and SEs by screen_quart
+bmd_by_q <- svyby(~DXDSTBMD, ~screen_quart, subset(subpop_design, RIAGENDR == "Female" & fsdch_2cat=="High/Marginal Food Security"), svymean, na.rm = TRUE)
+
+# Create a named lookup vector formatted as "Mean (SE)"
+bmd_lookup <- setNames(
+  sprintf("%.3f (%.3f)", bmd_by_q$DXDSTBMD, bmd_by_q$se),
+  as.character(bmd_by_q$screen_quart)
+)
+
+# Copy w_pct structure and map the Mean (SE) values onto the quartile levels
+fs_mean <- fs_w_pct
+fs_mean$table_body$stat_0 <- ifelse(
+  fs_mean$table_body$row_type == "level",
+  bmd_lookup[as.character(fs_mean$table_body$label)],
+  NA_character_
+)
+
+fs_mean <- fs_mean |> 
+  modify_header(stat_0 ~ "")
+
+fs_mean
+
+# 4. Adjusted Regression Table
+t4 <- tbl_regression(
+  reg_female_fs, 
+  include = "factor(screen_quart)", 
+  label = list("factor(screen_quart)" = "Screen Quartile"), 
+  conf.level = 0.95, 
+  conf.int = TRUE
+)
+
+# Harmonize internal variable names to match w_pct ("screen_quart")
+t4$table_body$variable[t4$table_body$variable == "factor(screen_quart)"] <- "screen_quart"
+
+strat_female_fs <- tbl_merge(
+  tbls = list(fs_w_pct, fs_mean, t4),
+  tab_spanner = c(
+    "**Sample Size**",
+    "**Mean BMD (SE)**",
+    "**Stratified Model** <sup>3</sup>"
+  )
+) %>%
+  modify_caption(
+    caption = "Table 5. Associations beetween daily average screen time and TBLH BMD raw scores among female children aged 8- 17 y.o stratified by food security status (n = 1,953)"
+  )
+
+strat_female_fs
+
+
+# 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
+fins_w_pct <- tbl_svysummary(
+  data = subset(subpop_design, RIAGENDR == "Female" & fsdch_2cat=="Low/Very Low Food Security"), 
+  include = screen_quart, 
+  missing = "no", 
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"), 
+  label = list(screen_quart = "Screen Quartile")
+)
+
+# 2. Mean BMD Table (Vertical Layout)
+# -------------------------------------------------------------
+# Calculate weighted means and SEs by screen_quart
+bmd_by_q <- svyby(~DXDSTBMD, ~screen_quart, subset(subpop_design, RIAGENDR == "Female" & fsdch_2cat=="High/Marginal Food Security"), svymean, na.rm = TRUE)
+
+# Create a named lookup vector formatted as "Mean (SE)"
+bmd_lookup <- setNames(
+  sprintf("%.3f (%.3f)", bmd_by_q$DXDSTBMD, bmd_by_q$se),
+  as.character(bmd_by_q$screen_quart)
+)
+
+# Copy w_pct structure and map the Mean (SE) values onto the quartile levels
+fins_mean <- fins_w_pct
+fins_mean$table_body$stat_0 <- ifelse(
+  fins_mean$table_body$row_type == "level",
+  bmd_lookup[as.character(fins_mean$table_body$label)],
+  NA_character_
+)
+
+fins_mean
+
+# 4. Adjusted Regression Table
+t5 <- tbl_regression(
+  reg_female_fins, 
+  exponentiate = FALSE, 
+  include = "factor(screen_quart)", 
+  label = list("factor(screen_quart)" = "Screen Quartile"), 
+  conf.level = 0.95, 
+  conf.int = TRUE
+)
+
+# Harmonize internal variable names to match w_pct ("screen_quart")
+t5$table_body$variable[t5$table_body$variable == "factor(screen_quart)"] <- "screen_quart"
+
+strat_female_fins <- tbl_merge(
+  tbls = list(fins_w_pct, fins_mean, t5),
+  tab_spanner = c(
+    "**Sample Size**",
+    "**Mean BMD (SE)**",
+    "**Stratified Model** <sup>3</sup>"
+  )
+) 
+
+
+strat_female_fins
+
+
+# Stack them vertically
+stacked_female_table <- tbl_stack(
+  tbls = list(strat_female_fs, strat_female_fins),
+  group_header = c("Food Secure Females", "Food Insecure Females") # Creates section headers
+) %>%
+  modify_caption(
+    caption = "Table 5. Associations beetween daily average screen time and TBLH BMD raw scores among female children aged 8- 17 y.o stratified by food security status² (n = 1,953)"
+  ) %>% 
+  as_gt() %>%
+  gt::tab_source_note(
+    source_note = "² P-value for omnibus nested F-test (0.97)"
+  ) |> 
+  gt::tab_source_note(
+    source_note = "³ Fully adjusted models were adjusted for age, race/ethnicity, height (in cm), household reference person's education level, and household income evaluated at the federal poverty level."
+  )
+
+stacked_female_table
+
+
+# attempting to save the table 
+gt::gtsave(stacked_female_table, filename = "Table5_Females.png") #save male as png
+
+
+
+
+```
+
