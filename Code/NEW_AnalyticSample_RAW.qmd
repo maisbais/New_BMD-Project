@@ -135,8 +135,8 @@ parent_edu = case_when(
     # Cycles H & I (2013-2016): Asked of ages 12–19
     # Cycle J (2017-2018): Asked of ages 12–17
 paq706_eligible = case_when(
-      cycle %in% c("H", "I") & RIDAGEYR >= 12 & RIDAGEYR <= 19 ~ 1,
-      cycle == "J"           & RIDAGEYR >= 12 & RIDAGEYR <= 17 ~ 1,
+      cycle %in% c("H", "I") & RIDAGEYR >= 8 & RIDAGEYR <= 19 ~ 1,
+      cycle == "J"           & RIDAGEYR >= 8 & RIDAGEYR <= 17 ~ 1,
       TRUE ~ 0
     ),
     
