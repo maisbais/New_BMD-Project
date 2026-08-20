@@ -465,7 +465,9 @@ summary(full_female_model)
 ```
 
 ## Creation of Table 2 and Table 3
+
 ### Among Males
+
 ```{r}
 library(gtsummary)
 library(gt)
@@ -560,7 +562,8 @@ gt::gtsave(merged_male_table, filename = "Table2_Males.png") #save male as png
 
 ```
 
-###  Among Females
+### Among Females
+
 ```{r}
 # 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
 w_pct <- tbl_svysummary(
@@ -644,8 +647,6 @@ gt::gtsave(merged_female_table, filename = "Table2_Females.png") #save male as p
 
 
 ```
- 
-       
 
 ## Evaluation of Effect Measure Modification Food Security- Interaction
 
@@ -764,8 +765,11 @@ svyby(formula = ~DXDSTBMD,
 
 
 ```
+
 ## Creation of Tables 4 and 5
+
 ### Among Males
+
 ```{r}
 
 # 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
@@ -911,6 +915,7 @@ gt::gtsave(stacked_male_table, filename = "Table4_Males.png") #save male as png
 ```
 
 ### Among Females
+
 ```{r}
 # 1. Distribution of Screen Quartile (Unweighted N, Weighted %)
 fs_w_pct <- tbl_svysummary(
@@ -1052,4 +1057,3 @@ stacked_female_table
 gt::gtsave(stacked_female_table, filename = "Table5_Females.png") #save male as png
 
 ```
-
