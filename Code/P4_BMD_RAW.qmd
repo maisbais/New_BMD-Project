@@ -895,7 +895,7 @@ stacked_male_table <- tbl_stack(
   group_header = c("Food Secure Males", "Food Insecure Males") # Creates section headers
 ) %>%
   modify_caption(
-    caption = "Table 4. Associations beetween daily average screen time and TBLH BMD raw scores among male children aged 8- 17 y.o stratified by food security status² (n = 2,044)"
+    caption = "Table 4. Associations beetween daily average screen time and TBLH BMD raw scores among male children aged 8- 17 y.o<br>stratified by food security status² (n = 2,044)"
   ) %>% 
   as_gt() %>%
   gt::tab_source_note(
