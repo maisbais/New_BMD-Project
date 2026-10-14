@@ -485,6 +485,14 @@ Dividing by the residual SD answers a different question (how unusual is this ch
 **What to expect:** the weighted SD of `z_haz_adj` will be below 1, somewhere around 0.85 to 0.9. That is the method working, not an error.
 :::
 
+## Save dataset with our new `z_haz_adj` column locally
+
+```{r}
+# Save master dataset locally
+saveRDS(nhanes_merge, file = here("data", "processed", "nhanes_bmd_pediatric_master_zscore.rds"))
+```
+
+
 ## Checking the z-score variables
 
 ```{r}
