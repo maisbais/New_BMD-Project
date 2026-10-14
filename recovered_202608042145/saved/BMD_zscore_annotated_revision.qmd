@@ -1,0 +1,712 @@
+---
+title: "BMD z-score: annotated revision"
+subtitle: "EPI DATA 536"
+date: last-modified
+format:
+  html:
+    link-external-newwindow: true
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+    self-contained: true
+    page-layout: full
+    html-math-method: mathml
+execute:
+  message: false
+  pdf: default 
+editor_options: 
+  chunk_output_type: console
+---
+
+## How to read this file
+
+This is a revision of `BMD z-score Anabel`. The goal is unchanged: a BMD z-score for NHANES youth that standardizes on age and sex, adjusts for height, and does not adjust for race. What changes is that the reference is now built the way the source paper built theirs:
+
+> Zemel BS, et al. Race-neutral pediatric reference ranges for bone mineral density predict prospective fractures in childhood. *J Clin Endocrinol Metab.* 2025;110(11):3034–3048. doi:10.1210/clinem/dgaf183
+
+The step numbers match the original so the two files can be read side by side. Variable names (`haz`, `z_unadj`, `z_pred`, `z_haz_adj`, `age_instudy`) are kept. Three kinds of notes appear:
+
+::: {.callout-important title="Change — what a change note looks like"}
+The original line, the revised line, and the reason. Numbered so they can be discussed one at a time.
+:::
+
+::: {.callout-tip title="Kept — what a kept note looks like"}
+Something in the original that was right, and why it was right.
+:::
+
+::: {.callout-warning title="Check — what a check note looks like"}
+Something that can only be settled by looking at the real data.
+:::
+
+### Summary of changes
+
+| # | Step | Original | Revised | Changes the scores? |
+|--|-----|---------------------------|-----------------------------|---------------|
+| 1 | Setup | Libraries loaded as needed; `mosaic`, `attach()` | One library block; neither used | No |
+| 2 | 1 | Age = `RIDAGEYR*12 + 6` | Age = `RIDEXAGM + 0.5` (age at exam) | Yes |
+| 3 | 1 | `cdcanthro()` on the full file, reading an existing `sex` column | Slim input frame with `sex` built from `RIAGENDR` | Only if `sex` was miscoded |
+| 4 | 1 | One flag, `age_instudy` | `age_instudy` (same children) plus a reference-sample flag, `in_ref` | Slightly |
+| 5 | 2 | `svydesign()` block pasted four times | One helper, `make_design()` | No |
+| 6 | 3–4 | Weighted mean and SD in 20 age-year × sex cells | LMS curves (GAMLSS), smooth in age, by sex; z from Equation 2 | Yes |
+| 7 | 5 | One HAZ slope for everyone | Sex-specific models, slope varies by year of age | Yes |
+| 8 | 5 | `residuals()` and `bind_cols()` | Prediction from a coefficient table joined by sex and age | Yes (fixes a bug) |
+| 9 | 5 | Residual divided by its SD | Plain difference (Equation 4) | Yes |
+| 10 | Checks | SD as `SE * sqrt(n)`; `favstats()` | `svyvar()`, `svyquantile()` | No |
+| 11 | Checks | QQ plot of regression residuals | Checks tied to what the score is for | No |
+| 12 | Checks | Hand calculation of the cell z-score | Hand calculation of Equations 2 and 4 | No |
+
+## Libraries & Dataset
+
+```{r}
+#| label: libraries
+#| warning: false
+library(survey)
+# install.packages("gamlss")
+library(gamlss)
+library(cdcanthro)
+library(here)
+library(ggplot2)
+library(tidyr)
+library(dplyr)   # last, so its verbs (select, filter, ...) are the ones in use
+```
+
+::: {.callout-important title="Change 1 — one library block; no mosaic, no attach()"}
+**Original:** packages were loaded where first needed, ending with `library(mosaic)` and `attach(nhanes_merge)` in the checks.
+
+**Revised:** everything is loaded once, here. `gamlss` is new (it fits the LMS curves in Step 3). `mosaic`, `jtools`, `janitor`, `readr` and `broom` are no longer needed.
+
+**Why:** `mosaic` replaces `mean`, `sum`, `min`, `max`, `sd` and others with its own versions (its start-up message in the original output lists them). Loading it near the end means the code above and below that line runs under different definitions of those functions. `attach()` takes a snapshot of the data frame, so any column created or changed afterwards is not what a bare variable name refers to. Loading everything at the top also means a missing package fails in the first ten seconds, not after the models have run.
+:::
+
+```{r}
+#| label: load-data
+# Same file as the original: everyone from the 3 waves, not just the study population
+nhanes_clean <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_master.rds"))
+
+# Remove the haz variable left over from earlier attempts
+nhanes_clean <- subset(nhanes_clean, select = -haz)
+```
+
+::: {.callout-tip title="Kept — dropping the stale haz column"}
+Removing the old `haz` before creating a new one prevents the join in Step 1 from producing `haz.x` and `haz.y`, or silently keeping the wrong one.
+:::
+
+## Step 1: height-for-age z-scores with `cdcanthro`
+
+```{r}
+#| label: study-flag
+# Study population: 8-17 years at screening (the same children as the original flag)
+nhanes_clean <- nhanes_clean |>
+  mutate(age_instudy = if_else(RIDAGEYR >= 8 & RIDAGEYR <= 17, 1, 0))
+
+# Who in the study population is missing age in months at exam?
+nhanes_clean |>
+  filter(age_instudy == 1) |>
+  count(has_exam_age = !is.na(RIDEXAGM),
+        has_height   = !is.na(BMXHT),
+        has_bmd      = !is.na(DXDSTBMD))
+```
+
+::: {.callout-warning title="Check — missing RIDEXAGM"}
+The original found 17,694 people missing `RIDEXAGM` and switched to `RIDAGEYR` for that reason. NHANES only releases `RIDEXAGM` for people under 240 months old at the exam, so adults are missing it by design. What matters is the table above: there should be no row with `has_exam_age = FALSE` and `has_bmd = TRUE`. A child who was never examined has no exam age, but also has no height and no DXA scan, so nothing is lost by using `RIDEXAGM`. If that row does appear, stop and look at those children before going on.
+:::
+
+```{r}
+#| label: age-and-sex
+stopifnot("RIAGENDR is expected to be labelled Male / Female" =
+            all(nhanes_clean$RIAGENDR %in% c("Male", "Female")))
+
+nhanes_clean <- nhanes_clean |>
+  mutate(
+    age_months  = RIDEXAGM + 0.5,           # age at exam: completed months + half a month
+    age_yr_exam = floor(RIDEXAGM / 12),     # completed years at exam
+    sex_cdc     = if_else(RIAGENDR == "Male", 1L, 2L)   # 1 = boys, 2 = girls
+  )
+```
+
+::: {.callout-important title="Change 2 — age in months at the exam"}
+**Original:**
+
+```r
+mutate(age_months = RIDAGEYR*12 + 6)
+```
+
+`cdcanthro` then added another half month (see its warning in the original output, "All ages are integers so 0.5 months has been added"), so the age actually used was years × 12 + 6.5.
+
+**Revised:** `age_months = RIDEXAGM + 0.5`.
+
+**Why:**
+
+1. Height and BMD were measured at the exam. `RIDAGEYR` is age at the screening interview.
+2. `cdcanthro` asks for age in months "as accurately as possible" because it interpolates between months of the growth chart. A whole-year age places every child at mid-year.
+3. For an individual child the error is not small, and it runs the same way in both scores. A child measured at 13 years 11 months is compared with children of 13 years 6 months, so the child looks taller for age than they are (HAZ too high). In the original Step 3 the same child's BMD was compared with the average 13-year-old, so their BMD z-score was too high as well. In the original Step 3 output, boys' mean BMD rises from 0.844 at 13 to 0.913 at 14, against an SD of 0.095, so half a year of age is worth roughly a third of an SD.
+
+   What this does *not* do is change the overall HAZ slope much. When I ran both versions on simulated data the pooled slope was 0.462 with year-based age and 0.461 with exam-month age, because the shared error and the extra noise roughly cancel. The reason to fix it is that each child's own score is more accurate, not that the model changes.
+4. `RIDEXAGM` is completed months, so the average child is half a month older than the value recorded. That is the + 0.5.
+:::
+
+```{r}
+#| label: check-existing-sex
+# What was cdcanthro reading in the original run?
+if ("sex" %in% names(nhanes_clean)) {
+  nhanes_clean |> count(sex, RIAGENDR)
+}
+```
+
+```{r}
+#| label: haz
+# A slim input frame: one row per child who can have a HAZ
+# (the CDC charts cover 24 months up to, not including, 240 months)
+haz_input <- nhanes_clean |>
+  filter(!is.na(age_months), age_months >= 24, age_months < 240) |>
+  transmute(SEQN, sex = sex_cdc, age_months, BMXHT, BMXWT) |>
+  as.data.frame()
+
+# cdcanthro 0.4.0 and later prints a note that this function is being renamed cdc_z().
+# Either name gives the same result.
+haz_results <- cdcanthro(haz_input, age = age_months, ht = BMXHT, wt = BMXWT) |>
+  as.data.frame() |>
+  select(SEQN, haz)
+
+# left join back to the full data frame
+nhanes_full <- left_join(nhanes_clean, haz_results, by = "SEQN")
+
+# how many in the study population are missing HAZ, and are they the ones missing height?
+nhanes_full |>
+  filter(age_instudy == 1) |>
+  count(missing_haz = is.na(haz), missing_height = is.na(BMXHT))
+```
+
+::: {.callout-important title="Change 3 — sex is built here, and HAZ runs on a slim input frame"}
+**Original:**
+
+```r
+haz_results <- cdcanthro::cdcanthro(data = nhanes_clean, age = age_months, ht = BMXHT, wt = BMXWT)
+```
+
+**Revised:** a five-column input frame whose `sex` column is created from `RIAGENDR` two chunks above.
+
+**Why, part 1 (sex):** HAZ is sex-specific, and `cdcanthro` does not take sex as an argument. It looks for a column named `sex` in the data. The original script never created one, so the function was reading a `sex` column that already existed in the master file, coded in some way the script does not show. The `count(sex, RIAGENDR)` table above shows what that was. If `sex` lines up as 1 = Male and 2 = Female (or as text beginning with M and F), the original HAZ values used the right charts. If it does not, they did not.
+
+**Why, part 2 (the full file):** the comment in the original says the full file was passed "in order to preserve the weighting". Keeping every row matters for the data frame that goes into `svydesign()`, because the design needs all the strata and PSUs. HAZ is a row-by-row lookup that does not involve the design at all, so it can be run on any subset as long as the result is joined back to the full file by `SEQN`, which is what happens here.
+:::
+
+::: {.callout-tip title="Kept — joining HAZ back by SEQN, and checking who is missing it"}
+The `left_join(..., by = "SEQN")` and the missing-HAZ count are from the original. Comparing missing HAZ with missing height was the right instinct: it shows the missingness comes from the height measurement, not from the function.
+:::
+
+```{r}
+#| label: reference-flag
+ref_max_months <- 240   # 240 = through age 19 at exam. The paper used all available ages.
+
+nhanes_full <- nhanes_full |>
+  mutate(in_ref = if_else(!is.na(RIDEXAGM) & RIDEXAGM >= 96 & RIDEXAGM < ref_max_months &
+                            !is.na(DXDSTBMD) & !is.na(WTMEC6YR) & WTMEC6YR > 0, 1, 0))
+
+nhanes_full |> count(age_instudy, in_ref)
+```
+
+::: {.callout-important title="Change 4 — a reference sample that is wider than the study population"}
+**Original:** `age_instudy` (written as `age_months` between 102 and 210, which is `RIDAGEYR` 8 to 17) defined both the analytic population and the children whose BMD values set the reference.
+
+**Revised:** `age_instudy` is the same children, written directly in terms of `RIDAGEYR`. A second flag, `in_ref`, marks everyone aged 8 through 19 at the exam who has a BMD value. The reference curves are fit on `in_ref`. The final checks are run on `age_instudy`.
+
+**Why:** the paper states "All ages were used to generate the curves" and then restricted the ages it reported. A smooth curve is least stable at its ends, where it has data on one side only. Fitting through age 19 moves that unstable end away from the 17-year-olds in the study population. It also means a child who was 17 at screening and had turned 18 by the exam still gets a score.
+
+**This is a judgment call.** Setting `ref_max_months <- 216` restricts the reference to exam ages 8 to 17, at the cost of a less stable curve at 17 and no score for children who turned 18 before the exam.
+:::
+
+## Step 2: survey design
+
+```{r}
+#| label: design-helper
+# One definition of the design, used every time it has to be (re)built
+make_design <- function(dat) {
+  svydesign(id = ~SDMVPSU, strata = ~SDMVSTRA, weights = ~WTMEC6YR,
+            nest = TRUE, data = dat)
+}
+```
+
+::: {.callout-tip title="Kept — design on the full file, then subset()"}
+The original built the design on all rows and then used `subset(design, age_instudy == 1)`. That is the correct order. `subset()` on a design object keeps the full set of strata and PSUs for variance estimation. Filtering the data frame first and then calling `svydesign()` would not.
+:::
+
+::: {.callout-important title="Change 5 — the design specification lives in one place"}
+**Original:** the six-line `svydesign(...)` block appears four times.
+
+**Revised:** a helper, `make_design()`, called when a design is needed.
+
+**Why:** the original was right to rebuild the design after creating new variables. A design object stores a copy of the data as it was when the design was made, so later columns are not in it. The helper keeps that behaviour and removes the risk that one of four pasted copies is edited (a different weight, say) and the others are not.
+:::
+
+## Step 3: reference curves for BMD by age and sex (LMS)
+
+```{r}
+#| label: fit-lms
+fit_lms <- function(sex_code) {
+
+  # gamlss needs a plain data frame with no missing values in the variables it uses
+  d <- nhanes_full |>
+    filter(in_ref == 1, sex_cdc == sex_code) |>
+    transmute(SEQN, age_months, DXDSTBMD,
+              w_norm = WTMEC6YR / mean(WTMEC6YR)) |>   # weights rescaled to average 1
+    as.data.frame()
+
+  fit <- gamlss(DXDSTBMD ~ pb(age_months),          # M: median, smooth in age
+                sigma.formula = ~ pb(age_months),   # S: spread, smooth in age
+                nu.formula    = ~ pb(age_months),   # L: skewness, smooth in age
+                family  = BCCG,                     # Box-Cox Cole-Green, as in the paper
+                weights = w_norm,
+                data    = d,
+                control = gamlss.control(n.cyc = 200, trace = FALSE))
+  stopifnot("LMS fit did not converge" = fit$converged)
+
+  # each child's own L, M, S at their exact age
+  scores <- d |>
+    transmute(SEQN,
+              L = fitted(fit, "nu"),
+              M = fitted(fit, "mu"),
+              S = fitted(fit, "sigma"))
+
+  # L, M, S at mid-year ages, for a table like the paper's Table 2
+  grid <- data.frame(age_months = seq(102, ref_max_months - 6, by = 12))
+  lms  <- predictAll(fit, newdata = grid, data = d, output = "data.frame")
+  table2 <- tibble(sex_cdc = sex_code,
+                   age_yr  = floor(grid$age_months / 12),
+                   L = lms$nu, M = lms$mu, S = lms$sigma) |>
+    mutate(minus2SD = M * (1 + L * S * -2)^(1 / L),    # the paper's Equation 1
+           plus2SD  = M * (1 + L * S *  2)^(1 / L))
+
+  list(fit = fit, scores = scores, table2 = table2, n = nrow(d))
+}
+
+lms_boys  <- fit_lms(1L)
+lms_girls <- fit_lms(2L)
+
+c(boys = lms_boys$n, girls = lms_girls$n)
+
+lms_table <- bind_rows(lms_boys$table2, lms_girls$table2) |>
+  mutate(sex = if_else(sex_cdc == 1L, "Male", "Female"))
+# each row is the curve read off at the middle of that year of age (8.5, 9.5, ...)
+lms_table |> select(sex, age_yr, L, M, S, minus2SD, plus2SD) |> knitr::kable(digits = 3)
+```
+
+::: {.callout-important title="Change 6 — LMS curves replace the cell means and SDs"}
+**Original (Steps 3 and 4):**
+
+```r
+svyby(~DXDSTBMD, by = ~RIDAGEYR + RIAGENDR, design_subset, svymean, ...)   # 20 cell means
+svyby(~DXDSTBMD, by = ~RIDAGEYR + RIAGENDR, design_subset, svyvar,  ...)   # 20 cell variances
+z_unadj = (DXDSTBMD - group_mean) / group_sd
+```
+
+**Revised:** one model per sex in which the median (M), the spread (S) and the skewness (L) of BMD are each a smooth function of age in months. This is the "lambda-mu-sigma" method. The paper fit it with GAMLSS in R using the Box-Cox Cole-Green family, with males and females analysed separately, which is what `fit_lms()` does.
+
+**Why:**
+
+1. **It is the paper's method.** The cell-mean approach was a reasonable first approximation, and its means track the paper's medians closely, but it is a different estimator.
+2. **Smooth in age.** With cells, a child's reference value jumps on their birthday, and a child of 13 years 1 month is held to the same standard as one of 13 years 11 months. The curve gives each child the expected value for their own age in months.
+3. **It borrows strength.** Each cell estimate used only the couple of hundred children in that cell. The curve uses the neighbouring ages too, so it is less noisy, most visibly in the SDs (the original cell SDs for girls go 0.091, 0.074, 0.094 at 14, 15, 16).
+4. **It allows skew.** BMD is not symmetric at these ages. In the paper's Table 2 (total body less head), for boys aged 13 the −2 SD value is 0.134 below the median and the +2 SD value is 0.175 above it. A mean-and-SD z-score treats the two tails as mirror images, so a low value comes out less extreme than it is. That matters as soon as anyone applies a cut-off such as z < −2.
+
+**About the weights.** `gamlss` accepts weights, but in effect it treats their total as the amount of information it has when deciding how wiggly each curve is allowed to be. NHANES weights add up to the US population, so the raw weights tell `gamlss` it has millions of observations and it under-smooths. Dividing by the mean keeps every child's relative weight and makes the weights add up to the number of children. In testing on simulated data shaped like this file, raw weights gave a median curve with about 15 effective degrees of freedom and rescaled weights gave about 9.
+
+**About the survey design.** `gamlss` knows nothing about strata or PSUs. That affects standard errors, not the fitted curves, and only the fitted L, M and S are used here. Do not report standard errors or confidence intervals from the `gamlss` objects.
+
+**What the paper does not say.** The paper names the method and the distribution but not the smoother or its degrees of freedom. `pb()` (penalised B-splines that choose their own smoothness) is my choice, not the paper's. `cs(age_months, df = ...)` with a fixed number of degrees of freedom is a common alternative.
+:::
+
+```{r}
+#| label: plot-lms
+#| fig-height: 4
+ggplot(lms_table, aes(age_yr + 0.5)) +
+  geom_ribbon(aes(ymin = minus2SD, ymax = plus2SD), alpha = 0.2) +
+  geom_line(aes(y = M)) +
+  facet_wrap(~sex) +
+  labs(x = "Age at exam (years)", y = "BMD (g/cm²)",
+       title = "NHANES-internal reference: median and ±2 SD")
+```
+
+## Step 4: merge back and compute the BMD-for-age z-score
+
+```{r}
+#| label: z-unadj
+lms_scores <- bind_rows(lms_boys$scores, lms_girls$scores)
+
+nhanes_merge <- nhanes_full |>
+  left_join(lms_scores, by = "SEQN") |>
+  mutate(z_unadj = ((DXDSTBMD / M)^L - 1) / (L * S))   # the paper's Equation 2
+
+nhanes_merge |>
+  group_by(age_instudy) |>
+  summarise(na_count = sum(is.na(z_unadj)),
+            non_na_count = sum(!is.na(z_unadj)))
+```
+
+The paper's Equation 2, where $X$ is the child's BMD and $L$, $M$, $S$ are the values for their age and sex:
+
+$$Z = \frac{(X / M)^{L} - 1}{L \times S}$$
+
+::: {.callout-tip title="Kept — merge by key, then count who has a score"}
+Same pattern as the original Step 4: join the reference values to the full file, compute the z-score in `mutate()`, and count missing values by `age_instudy`. The variable is still called `z_unadj`.
+:::
+
+::: {.callout-warning title="Check — the children with no z-score"}
+The original flagged 1,062 children in the study population without `z_unadj` and left it "to explore later". They are the children with no `DXDSTBMD`. If the DXA exam-status variable is in the master file, this shows why:
+
+```{r}
+#| label: dxa-status
+if ("DXAEXSTS" %in% names(nhanes_merge)) {
+  nhanes_merge |>
+    filter(age_instudy == 1) |>
+    count(DXAEXSTS, has_bmd = !is.na(DXDSTBMD))
+}
+```
+
+In the 2015–16 and 2017–18 documentation the codes are 1 = scan completed, 2 = completed but invalid, 3 = not scanned, pregnancy, 4 = not scanned, weight over 450 lb, 5 = not scanned, height over 6'5", 6 = not scanned, other reason. I have not checked the 2013–14 codebook. Close to one in five children in the study population has no score, so who they are belongs in the limitations, and it is worth a table of age, sex and BMI by `has_bmd`.
+:::
+
+## Step 5: HAZ-adjusted BMD z-scores
+
+```{r}
+#| label: haz-models
+nhanes_merge <- nhanes_merge |>
+  mutate(age_grp    = factor(age_yr_exam, levels = 8:(ref_max_months / 12 - 1)),
+         haz_sample = if_else(in_ref == 1 & !is.na(haz) & !is.na(z_unadj), 1, 0))
+
+design <- make_design(nhanes_merge)
+
+fit_haz <- function(sex_code) {
+  fit <- svyglm(z_unadj ~ 0 + age_grp + age_grp:haz,
+                design = subset(design, haz_sample == 1 & sex_cdc == sex_code))
+
+  co <- coef(fit)
+  se <- SE(fit)
+  is_slope <- grepl(":haz$", names(co))
+  age_of   <- function(nm) as.numeric(gsub("\\D", "", nm))   # "age_grp13:haz" -> 13
+  stopifnot(identical(age_of(names(co)[is_slope]), age_of(names(co)[!is_slope])))
+
+  tibble(sex_cdc     = sex_code,
+         age_yr_exam = age_of(names(co)[!is_slope]),
+         a    = unname(co[!is_slope]),    # intercept for that age
+         b    = unname(co[is_slope]),     # HAZ slope for that age
+         se_b = unname(se[is_slope]))
+}
+
+haz_eq <- bind_rows(fit_haz(1L), fit_haz(2L))
+
+# unweighted n behind each equation
+haz_eq <- nhanes_merge |>
+  filter(haz_sample == 1) |>
+  count(sex_cdc, age_yr_exam) |>
+  right_join(haz_eq, by = c("sex_cdc", "age_yr_exam")) |>
+  mutate(sex = if_else(sex_cdc == 1L, "Male", "Female"))
+
+# The NHANES-internal version of the paper's Table 3
+haz_eq |> select(sex, age_yr_exam, n, a, b, se_b) |> knitr::kable(digits = 3)
+```
+
+::: {.callout-important title="Change 7 — the HAZ slope depends on age and sex"}
+**Original:**
+
+```r
+haz_model <- svyglm(z_unadj ~ haz, design = design_subset)   # one intercept, one slope (0.47)
+```
+
+**Revised:** one model per sex, with a separate intercept and a separate HAZ slope for each year of age.
+
+**Why:** the paper used "sex-specific regression models with age group by HAZ interactions", and its Table 3 gives a different equation for every year of age in each sex. It did so because height explained much more of the variation in BMD z-scores in younger children than in older ones (for total body less head, R² of about 0.3 under age 10 and under 0.1 at 15 and over). For total body less head BMD the paper's slope for boys falls from 0.744 at age 8 to 0.236 at age 17. A single slope of 0.47 under-corrects a short 8-year-old and over-corrects a short 17-year-old.
+
+**Reading the formula.** `0 + age_grp` gives every age its own intercept (the `a` in the paper's Equation 3) in place of one overall intercept. `age_grp:haz` gives every age its own slope (the `b`). Fitting boys and girls in separate models makes both of those sex-specific.
+
+**Precision.** Each equation rests on a few hundred children, so the slopes will bounce from year to year more than the true relationship does. Compare the size of the bounces with `se_b`. If neighbouring ages differ by much more than their standard errors suggest is real, that is an argument for wider age bands or a slope that is a smooth function of age. The paper used single years, so that is what is done here.
+:::
+
+```{r}
+#| label: z-haz-adj
+nhanes_merge <- nhanes_merge |>
+  left_join(haz_eq |> select(sex_cdc, age_yr_exam, a, b),
+            by = c("sex_cdc", "age_yr_exam")) |>
+  mutate(z_pred    = a + b * haz,          # the paper's Equation 3
+         z_haz_adj = z_unadj - z_pred)     # the paper's Equation 4
+
+nhanes_merge |>
+  group_by(age_instudy) |>
+  summarise(na_count = sum(is.na(z_haz_adj)),
+            non_na_count = sum(!is.na(z_haz_adj)))
+```
+
+The paper's Equations 3 and 4:
+
+$$\text{Predicted Z} = a + b \times \text{HAZ} \quad (\text{age- and sex-specific})$$
+
+$$\text{HAZ-adjusted Z} = \text{BMD-for-age Z} - \text{Predicted Z}$$
+
+::: {.callout-important title="Change 8 — the prediction comes from a coefficient table joined by key"}
+**Original:**
+
+```r
+mf$z_pred  <- fitted(haz_model)
+mf$z_resid <- residuals(haz_model)
+nhanes_temp <- bind_cols(nhanes_temp, mf %>% select(z_pred, z_resid))
+```
+
+**Revised:** the coefficients `a` and `b` are joined to each child by sex and age, and `z_pred = a + b * haz` is computed in `mutate()`.
+
+**Why, part 1 (a bug).** For a `svyglm`, `residuals()` does not return observed minus fitted unless asked to. Its default is `type = "deviance"`, and for a weighted linear model a deviance residual is (observed − fitted) × √weight, where the weight is the child's survey weight divided by the average weight. The original output shows this. In the `glimpse(aug_check)` table near the end:
+
+| Row | Observed − fitted | `(weights)` | √weight | Product | Printed `.resid` |
+|-----|-------------------|-------------|---------|---------|------------------|
+| "4" | 1.2112 − (−0.0524) = 1.2636 | 2.3368 | 1.5287 | 1.932 | 1.9315 |
+| "14" | −0.6439 − (−0.0517) = −0.5922 | 0.5058 | 0.7112 | −0.421 | −0.4212 |
+
+Those rows come from the `haz_check` model through `augment()`, but `residuals(haz_model)` in Step 5 has the same default. A second sign is in Step 5 itself: the model had R² = 0.25, so the residuals of a z-score with variance near 1 should have variance near 0.75, and `svyvar` reported 1.30. I also ran the original Step 5 on simulated data: `residuals(haz_model)` equalled (observed − fitted) × √weight exactly, and the residual variance came out at 1.35 against a 1 − R² of 0.75.
+
+The consequence was that every child's final score was multiplied by the square root of their own survey weight. Children with below-average weights had their scores shrunk towards zero and children with above-average weights had theirs stretched. Weights are smaller on average in the groups NHANES oversamples, which include non-Hispanic Black, non-Hispanic Asian and Hispanic participants, so how spread out a child's score could be depended on their race and ethnicity. For a score whose purpose is to be race-neutral, that is the most important thing this revision fixes.
+
+The general habit: when observed minus fitted is what is wanted from any `glm` or `svyglm`, write `residuals(model, type = "response")`.
+
+**Why, part 2 (fragility).** `bind_cols()` matches rows by position. It was correct in the original only because `nhanes_temp` and the model frame happened to be in the same order with the same rows, which the original checked with `nrow()`. A join matches on the keys, so it stays correct if a filter or a sort changes upstream. It also removes the need for `mf`, `nhanes_temp`, `temp_indicator`, `z_complete` and `last_step`.
+:::
+
+::: {.callout-important title="Change 9 — the adjusted score is a difference, not a re-standardized residual"}
+**Original:**
+
+```r
+z_haz_adj = z_resid / residual_sd
+```
+
+**Revised:** `z_haz_adj = z_unadj - z_pred`.
+
+**Why:** the paper's Equation 4 is a plain subtraction, and its worked example confirms it: a boy with a spine BMD z of −2.52 and a predicted z of −0.63 has an adjusted z of −2.52 − (−0.63) = −1.89. Nothing is divided. The adjusted score answers "how far is this child's BMD z-score from what is expected for a child of this height", in the same units as the BMD z-score.
+
+Dividing by the residual SD answers a different question (how unusual is this child among children of the same height). With correctly computed residuals it also makes every score larger in absolute value: if HAZ explains a quarter of the variance, the inflation is 1/√0.75, about 15%, which moves children across a −2 cut-off.
+
+**What to expect:** the weighted SD of `z_haz_adj` will be below 1, somewhere around 0.85 to 0.9. That is the method working, not an error.
+:::
+
+## Checking the z-score variables
+
+```{r}
+#| label: final-design
+design <- make_design(nhanes_merge)                 # rebuilt: z_pred and z_haz_adj are new
+design_final <- subset(design, age_instudy == 1 & !is.na(z_haz_adj))
+```
+
+### Weighted mean, SD and range
+
+```{r}
+#| label: weighted-summaries
+svymean(~z_unadj + z_haz_adj + haz, design_final)
+
+# weighted SDs
+weighted_sd <- function(formula) sqrt(as.numeric(coef(svyvar(formula, design_final))))
+c(z_unadj   = weighted_sd(~z_unadj),
+  z_haz_adj = weighted_sd(~z_haz_adj),
+  haz       = weighted_sd(~haz))
+
+# weighted percentiles, plus the unweighted extremes
+svyquantile(~z_unadj + z_haz_adj + haz, design_final,
+            quantiles = c(0.01, 0.25, 0.5, 0.75, 0.99), ci = FALSE)
+nhanes_merge |>
+  filter(age_instudy == 1, !is.na(z_haz_adj)) |>
+  summarise(across(c(z_unadj, z_haz_adj, haz), list(min = min, max = max)))
+```
+
+::: {.callout-important title="Change 10 — weighted SDs and percentiles"}
+**Original:**
+
+```r
+0.0528 * (sqrt(4504))            # "SD" of z_haz_adj: 3.54
+favstats(z_haz_adj[last_step==1])
+```
+
+**Revised:** `sqrt(svyvar())` for the SD and `svyquantile()` for percentiles.
+
+**Why:** SE × √n gives back the SD only for a simple random sample. In a complex survey the standard error also carries the design effect from clustering and unequal weights, so the formula returned 3.54 for a variable that had just been divided by its own weighted SD and therefore had a weighted SD of exactly 1. `favstats()` is unweighted, so its mean and SD describe the sample, not the population. The minimum and maximum do not depend on weights, which is why they are taken from the data frame directly above.
+:::
+
+### By age and sex
+
+```{r}
+#| label: by-age-sex
+svyby(~z_unadj + z_haz_adj, ~RIAGENDR + RIDAGEYR, design_final, svymean) |>
+  as.data.frame() |>
+  select(RIAGENDR, RIDAGEYR, z_unadj, se.z_unadj, z_haz_adj, se.z_haz_adj) |>
+  knitr::kable(digits = 2, row.names = FALSE)
+```
+
+Every mean should be within about two of its own standard errors of 0. A single row that is a little off is noise. A run of values on the same side of 0 at neighbouring ages would mean the curve is too smooth to follow the data there.
+
+### By height
+
+```{r}
+#| label: by-height
+design_final <- update(design_final,
+  haz_group = cut(haz, c(-Inf, -1, 1, Inf),
+                  labels = c("Shorter (HAZ < -1)", "Average", "Taller (HAZ > 1)")),
+  low_unadj   = as.numeric(z_unadj   < -2),
+  low_haz_adj = as.numeric(z_haz_adj < -2))
+
+svyby(~z_unadj + z_haz_adj, ~haz_group, design_final, svymean) |>
+  knitr::kable(digits = 2, row.names = FALSE)
+
+# slope of each score on HAZ
+round(rbind(z_unadj   = coef(svyglm(z_unadj   ~ haz, design_final)),
+            z_haz_adj = coef(svyglm(z_haz_adj ~ haz, design_final))), 3)
+
+# share of children below -2, before and after the height adjustment
+svymean(~low_unadj + low_haz_adj, design_final)
+```
+
+Before adjustment, shorter children should have clearly negative mean z-scores and taller children clearly positive ones. After adjustment all three groups should sit near 0 and the slope on HAZ should be near 0. These are the same three height groups as the paper's Figure 4.
+
+::: {.callout-warning title="Check — extreme HAZ"}
+The paper's reference children were recruited with height within ±2 SD, and it warns that using the equations for children with extreme HAZ "may yield spurious results". The original output had HAZ from −4.0 to 3.6.
+
+```{r}
+#| label: extreme-haz
+nhanes_merge |>
+  filter(age_instudy == 1, !is.na(z_haz_adj)) |>
+  count(haz_below_minus3 = haz < -3, haz_above_3 = haz > 3)
+```
+
+Whether to keep, flag or exclude those children is a decision for the analysis plan. They are kept here.
+:::
+
+### Distribution
+
+```{r}
+#| label: histograms
+#| fig-height: 4
+#| layout-ncol: 2
+svyhist(~z_unadj,   design_final, breaks = 30, main = "BMD-for-age z (z_unadj)")
+svyhist(~z_haz_adj, design_final, breaks = 30, main = "HAZ-adjusted z (z_haz_adj)")
+```
+
+```{r}
+#| label: qq
+#| fig-height: 4.5
+#| fig-width: 4.5
+svyqqmath(~z_unadj, design_final, null = qnorm,
+          xlab = "Normal quantiles", ylab = "Weighted quantiles of z_unadj")
+abline(0, 1)
+```
+
+::: {.callout-tip title="Kept — the weighted histogram"}
+`svyhist()` on the design subset was the right tool and is unchanged.
+:::
+
+::: {.callout-important title="Change 11 — diagnostics that match what the score is for"}
+**Original:** regress `z_haz_adj` on `haz`, pull `.resid` from `augment()`, and draw a QQ plot. The points ran from about −11 to +9 and the comment asked whether "a normal distribution with more weights in the tails" was the right reading.
+
+**Revised:** a weighted QQ plot of `z_unadj` itself, plus the tables above by age, sex and height.
+
+**Why:** the reading of the plot was correct. It was heavy-tailed. The cause was the plot, not the scores: `augment()` returned deviance residuals, so each point had been multiplied by the square root of a survey weight (Change 8). Multiplying normal values by widely varying constants is a textbook way to produce heavy tails. `stat_qq()` also ignores the survey weights.
+
+More generally, a diagnostic should test the property the variable is supposed to have:
+
+- `z_unadj` is supposed to be standard normal at every age in both sexes. The QQ plot and the by-age-and-sex means test that.
+- `z_haz_adj` is supposed to be unrelated to height. The by-height table and the slope test that. It is not expected to have an SD of 1 (Change 9).
+:::
+
+### Against the paper
+
+```{r}
+#| label: paper-values
+# Total body less head BMD, ages 8-17: medians from the paper's Table 2, HAZ slopes from Table 3
+paper <- tibble(
+  age_yr = rep(8:17, 2),
+  sex    = rep(c("Male", "Female"), each = 10),
+  M_paper = c(0.654, 0.692, 0.728, 0.766, 0.813, 0.871, 0.934, 0.994, 1.042, 1.072,
+              0.640, 0.681, 0.729, 0.784, 0.843, 0.894, 0.929, 0.948, 0.958, 0.965),
+  b_paper = c(0.744, 0.669, 0.591, 0.591, 0.550, 0.556, 0.553, 0.327, 0.244, 0.236,
+              0.682, 0.622, 0.639, 0.708, 0.620, 0.494, 0.388, 0.371, 0.323, 0.316))
+
+compare <- paper |>
+  left_join(lms_table |> select(sex, age_yr, M_nhanes = M),
+            by = c("sex", "age_yr")) |>
+  left_join(haz_eq |> select(sex, age_yr = age_yr_exam, b_nhanes = b, se_b),
+            by = c("sex", "age_yr"))
+
+compare |> mutate(M_ratio = M_nhanes / M_paper) |> knitr::kable(digits = 3)
+```
+
+```{r}
+#| label: paper-plots
+#| fig-height: 4
+ggplot(compare, aes(age_yr)) +
+  geom_pointrange(aes(y = b_nhanes,
+                      ymin = b_nhanes - 2 * se_b,
+                      ymax = b_nhanes + 2 * se_b)) +
+  geom_line(aes(y = b_paper), linetype = "dashed") +
+  facet_wrap(~sex) +
+  labs(x = "Age (years)", y = "HAZ slope (b)",
+       title = "HAZ slopes: NHANES-internal (points, ±2 SE) and the paper (dashed)")
+```
+
+This is a comparison of shape, not a target to hit. The paper's children were a sample of healthy children whose scans were analysed with different Hologic software, so the medians need not agree exactly. The original cell means were within about 5% of the paper's medians, and lower at every age in both sexes. What should carry over is the pattern: medians rising with age and levelling off earlier in girls, and HAZ slopes that are larger in the younger children than in the older ones.
+
+### Spot check by hand
+
+```{r}
+#| label: spot-check
+spot <- nhanes_merge |>
+  filter(age_instudy == 1, !is.na(z_haz_adj)) |>
+  slice(c(4, 14, 16)) |>
+  select(SEQN, RIAGENDR, RIDEXAGM, DXDSTBMD, L, M, S, z_unadj, haz, a, b, z_pred, z_haz_adj)
+spot
+
+# Equation 2, then Equations 3 and 4, for the first of those children
+with(spot[1, ], ((DXDSTBMD / M)^L - 1) / (L * S))
+with(spot[1, ], z_unadj - (a + b * haz))
+```
+
+::: {.callout-important title="Change 12 — the hand calculation follows the new formulas"}
+**Original:** three children's `z_unadj` recomputed by typing in `DXDSTBMD`, `group_mean` and `group_sd`.
+
+**Revised:** the same idea with Equation 2, then Equations 3 and 4. The two `with()` lines should reproduce `z_unadj` and `z_haz_adj` in the first row of the table. Doing one more on a calculator from the printed L, M, S, a and b is worth the two minutes.
+
+**Why:** checking a few rows by hand is a good habit and it was the part of the original that would have caught a wrong merge. One limit is worth knowing: the original spot check verified Step 4 and stopped there, and the bug was in Step 5. Check the last number the pipeline produces, not only the first.
+:::
+
+## Optional: how much did the age-and-sex z-score change?
+
+```{r}
+#| label: old-vs-new
+#| fig-height: 4
+# The original Step 3-4 score, rebuilt: weighted mean and SD within age-year x sex cells
+old_new <- nhanes_merge |>
+  filter(age_instudy == 1, !is.na(z_unadj)) |>
+  group_by(RIDAGEYR, RIAGENDR) |>
+  mutate(cell_mean = weighted.mean(DXDSTBMD, WTMEC6YR),
+         cell_sd   = sqrt(weighted.mean((DXDSTBMD - cell_mean)^2, WTMEC6YR)),
+         z_cell    = (DXDSTBMD - cell_mean) / cell_sd,
+         months_into_year = RIDEXAGM - 12 * RIDAGEYR) |>
+  ungroup()
+
+cor(old_new$z_cell, old_new$z_unadj)
+
+# who is below -2 under each version
+old_new |> count(cell_below_minus2 = z_cell < -2, lms_below_minus2 = z_unadj < -2)
+
+ggplot(old_new, aes(months_into_year, z_cell - z_unadj)) +
+  geom_point(alpha = 0.15) +
+  geom_smooth(method = "lm", formula = y ~ x) +
+  labs(x = "Months of age beyond the whole-year age (RIDEXAGM - 12 x RIDAGEYR)",
+       y = "Cell z-score minus LMS z-score",
+       title = "The cell z-score favours children who are older within their age-year")
+```
+
+The two versions will be very highly correlated, which is why the original looked reasonable. The plot shows what the correlation hides: the cell-based score rises with how far the child is into their year of age, because every child in a cell is compared with the same mean (Change 2, point 3). `cell_sd` here differs from the original's `svyvar` version by a factor of √(n/(n − 1)), which is under half a percent for cells of this size.
+
+## Open items
+
+These are things the code cannot settle.
+
+1. **Tested on simulated data only.** I did not have the master file. The code was run end to end on a simulated file with the same variable names, row count and structure. It ran without errors, the HAZ slopes it estimated were all within two standard errors of the slopes planted in the simulation, and the scores correlated 0.998 with the planted ones. None of the numbers printed when this is knit on the real file have been seen yet, so read the checks rather than assuming they pass.
+2. **Smoother settings** in Step 3 are mine, not the paper's (Change 6).
+3. **What the reference population is.** The paper's z-scores are relative to healthy children with normal growth. These are relative to all US youth with a valid DXA scan. That is a legitimate reference, and it should be described that way in the methods.
+4. **The children with no DXA scan** (Step 4 check). The survey weights make the examined sample represent the population, not the scanned sample.
+5. **Extreme HAZ** (the check under "By height").
+6. **`DXDSTBMD`.** I could not confirm from the codebook that this is total body less head BMD. The agreement of the original cell means with the paper's total-body-less-head medians suggests it is.
