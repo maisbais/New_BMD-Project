@@ -83,12 +83,12 @@ library(dplyr)   # last, so its verbs (select, filter, ...) are the ones in use
 # Same file as the original: everyone from the 3 waves, not just the study population
 nhanes_clean <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_master.rds"))
 
-# Remove the haz variable left over from earlier attempts
-nhanes_clean <- subset(nhanes_clean, select = -haz)
+# Remove the haz variable left over from earlier attempts as wel as L, M, S
+nhanes_clean <- subset(nhanes_clean, select = c(-haz, -L, -M, -S))
 ```
 
 ::: {.callout-tip title="Kept — dropping the stale haz column"}
-Removing the old `haz` before creating a new one prevents the join in Step 1 from producing `haz.x` and `haz.y`, or silently keeping the wrong one.
+Removing the old `haz` before creating a new one prevents the join in Step 1 from producing `haz.x` and `haz.y`, or silently keeping the wrong one. Similarly, L, M, and S were dropped as these were residuals from prior attempts at obtaining Z-scores and were producing `L.x` and `L.y`...
 :::
 
 ## Step 1: height-for-age z-scores with `cdcanthro`
