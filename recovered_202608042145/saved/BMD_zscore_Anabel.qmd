@@ -37,19 +37,19 @@ nhanes_clean <- readRDS(here("data", "processed", "nhanes_bmd_pediatric_master.r
 nhanes_clean <- subset(nhanes_clean, select = -haz)
 ```
 
-# Step 1: create height-adjusted z-scores with package cdcanthro
+# Step 1: create height-adjusted z-scores with package `cdcanthro`
 
 ```{r}
 
 # convert age in years to age in months.
 # there is already a variable in NHANES that has age in months up to 19 y.o
 sum(is.na(nhanes_clean$RIDEXAGM))
-# it is called RIDEXAGM, however some ppl in our study pop are missing this var,
+# it is called RIDEXAGM, however some ppl in our study pop are missing this var
 
 sum(is.na(nhanes_clean$BMXHT))
 sum(is.na(nhanes_clean$BMXWT))
 sum(is.na(nhanes_clean$RIDAGEYR))
-# so ill just create a var with RIDAGEYR since missing = 0
+# so I'll just create a var with RIDAGEYR since missing = 0
 
 nhanes_clean <- nhanes_clean |> 
   mutate(age_months = RIDAGEYR*12 + 6) 
@@ -190,7 +190,7 @@ nhanes_merge %>%
 
 # missing n = 1062 in our age_instudy pop who are missing a z-unadj score. 
 # I'd like to check this and see if the n missing should be this large.
-# will leave as is for now and explore later. 
+# will leave as is for now and explore later... 
 
 ```
 
@@ -337,6 +337,7 @@ nhanes_merge %>%
 ```
 
 # Checking the Z-score Variable `z_haz_adj`
+
 ## Creating a weighted Histogram
 
 ```{r}
@@ -362,6 +363,7 @@ svyhist(~z_haz_adj, design = design_subset, breaks = 30)
 ```
 
 ## checking min, max, and mean
+
 ```{r}
 svymean(~z_haz_adj, design = design_subset) # weighted mean and SE of 
 # adjusted z-score
@@ -384,7 +386,8 @@ favstats(haz[last_step==1]) # min and max of haz
 
 ```
 
-## Evaluating the normality of the residuals 
+## Evaluating the normality of the residuals
+
 ```{r}
 
 ##Evaluation of distribution of the haz-adjusted model with QQ plot
@@ -403,10 +406,32 @@ ggplot(aug_check,
   stat_qq_line()
 
 # Per, Dr. Nicky Wakim's Slides from BSTA 512 this QQ plot looks most like 
-# a normal distribution with more weights in the tails. 
+# a normal distribution with more weights in the tails? Not sure if this
+# interpretation is correct
 
 
 
 ```
+
+## Spot check a couple of the kids by hand - pick 2 or 3 rows to compute the unadjusted z-score by hand given the group mean and group SDs and see if we get the same numbers as R
+```{r}
+# selecting "Kids" and their unadjusted z-score calculated from R
+nhanes_merge[c(4, 14, 16), "z_unadj"]
+
+# hand calculation of unadjusted z-score
+# obtaining values to calculate
+nhanes_merge[c(4,14,16), c("DXDSTBMD", "group_mean", "group_sd")]
+
+# Row 4 Calculation
+(0.718 - 0.6602002) / 0.06379761
+
+# Row 14 Calculation
+(0.589 - 0.6635949)/ 0.06918552
+
+# Row 16 Calculation
+(0.723 - 0.7126942) / 0.08088669
+
+```
+
 
 
