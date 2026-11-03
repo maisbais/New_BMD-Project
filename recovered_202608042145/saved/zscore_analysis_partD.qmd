@@ -1,0 +1,154 @@
+---
+title: "Screen-BMD Z-score Regression Analysis"
+subtitle: "Table 2-5 Creation"
+author: "Anabel Mendoza"
+editor: visual
+date-modified: "today"
+format: 
+  html: 
+    link-external-newwindow: true
+    toc: true
+    embed-resources: true
+    self-contained: true
+    page-layout: full
+  pdf: default 
+editor_options: 
+  chunk_output_type: console
+---
+```{r, include = FALSE}
+library(survey)
+library(gamlss)
+library(cdcanthro)
+library(here)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(tidyverse)
+library(gtsummary)
+library(tableone)
+library(rstatix)
+library(jtools)
+library(haven)
+library(psych)
+library(janitor)
+library(Hmisc)
+```
+# Part D
+
+## Evalation of Cell Counts in Exposure `screen_quart`
+
+```{r}
+
+## Examination of Exposure & Evaluation of cell counts ##
+# setting male analytic sample
+subpop_male <- subset(nhanes_newvars, 
+                 subpop1 ==1 & RIAGENDR =="Male")
+
+# setting female analytic sample
+subpop_female <- subset(nhanes_newvars, subpop1 ==1 & RIAGENDR =="Female")
+
+# examination of exposure (screen time) and EMM among males 
+# frequency table of males
+subpop_male %>% 
+  mutate(fsdch_2cat = as.character(fsdch_2cat)) %>% 
+  tabyl(screen_quart, fsdch_2cat)
+
+# examination of exposure (screen time) and EMM among females
+# frequency table of females
+subpop_female |> 
+  mutate(fsdch_2cat = as.character(fsdch_2cat)) |> 
+  tabyl(screen_quart, fsdch_2cat)
+```
+
+## Evaluation of Outcome `z_haz_adj`
+
+```{r}
+## Examination of Outcome from Part C + Graphical Visualization ##
+
+attach(nhanes_newvars)
+## Primary survey design
+nhanes_design_full <- svydesign(
+  id = ~SDMVPSU,
+  strata = ~SDMVSTRA,
+  weights = ~WTMEC6YR,
+  nest = TRUE,
+  data = nhanes_newvars)
+
+# Isolating analytic subpop
+subpop_design <- subset(nhanes_design_full, subpop1 == 1)
+
+## Prevalence Estimate 
+#Estimate prevalence of low BMD (defined as z score less than -2.0) using weighted estimates
+svyciprop(~I(z_haz_adj == "Low TBLH BMD"),
+          design=subpop_design,
+          method = "logit",
+          level = 0.95)
+
+#Estimate prevalence and confidence intervals by sex
+gender_prev <- svyby(formula = ~I(z_haz_adj == "Low TBLH BMD"),
+  by = ~RIAGENDR,
+  design = subpop_design,
+  FUN = svyciprop,
+  method = "logit",
+  level = 0.95)
+
+confint(gender_prev)
+
+## Mean & Central Tendency 
+#Estimate the mean and central tendency of BMD correcting for stratified sampling and survey weights. 
+## correcting for stratified sampling and survey weights
+svymean(~z_haz_adj, design = subpop_design)
+
+
+#Estimating the mean and central tendency of BMD by screen time quartiles
+svyby(formula = ~z_haz_adj, 
+      by = ~factor(screen_quart), 
+      design = subpop_design, 
+      FUN = svymean, 
+      keep.var = TRUE)
+
+#Estimating the mean and central tendency of BMD by screen time quartiles & SEX
+svyby(formula = ~z_haz_adj, 
+      by = ~factor(screen_quart), 
+      design = subset(subpop_design, RIAGENDR =="Male"), # by sex male
+      FUN = svymean, 
+      keep.var = TRUE)
+
+svyby(formula = ~z_haz_adj, 
+      by = ~factor(screen_quart), 
+      design = subset(subpop_design, RIAGENDR =="Female"), # by sex female
+      FUN = svymean, 
+      keep.var = TRUE)
+
+# weighted histogram of BMD adjusted z-score
+## weighted histogram of analytic sample
+svyhist(~z_haz_adj, 
+        design = subpop_design, 
+        breaks = 30)
+
+# weighted histogram by male sex
+svyhist(~z_haz_adj, 
+        design = subset(subpop_design, RIAGENDR =="Male"), 
+        breaks = 30)
+
+# weighted histogram by female sex
+svyhist(~z_haz_adj, 
+        design = subset(subpop_design, RIAGENDR =="Female"), 
+        breaks = 30)
+
+
+# weighted boxplot of BMD adjusted z-score
+## weighted boxplot
+svyboxplot(z_haz_adj~1, 
+           design = subpop_design)
+
+# weighted boxplot by male sex
+svyboxplot(z_haz_adj~1, 
+           design = subset(subpop_design, RIAGENDR =="Male"))
+
+# weighted boxplot by female sex
+svyboxplot(z_haz_adj~1, 
+           design = subset(subpop_design, RIAGENDR =="Female"))
+```
+
+
