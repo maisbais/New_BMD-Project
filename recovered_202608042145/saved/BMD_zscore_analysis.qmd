@@ -656,7 +656,7 @@ gt::gtsave(table_missingness, filename = "table_missingness.png") #save male as 
 
 ```
 
-# Part 4
+# Part D
 
 ## Evalation of Cell Counts in Exposure `screen_quart`
 

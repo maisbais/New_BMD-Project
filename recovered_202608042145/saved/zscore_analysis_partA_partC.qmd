@@ -15,6 +15,7 @@ format:
 editor_options: 
   chunk_output_type: console
 ---
+
 ```{r, include = FALSE}
 library(survey)
 library(gamlss)
@@ -355,7 +356,7 @@ subpop_design <- subset(nhanes_design_full, subpop1 == 1)
 
 ```
 
-## Central Tendency 
+## Central Tendency
 
 ```{r}
 
@@ -512,6 +513,7 @@ t1_female
 ```
 
 ## Combined Table 1
+
 ```{r}
 ## Make combined table 1 stratified by screen time quartiles AND sex ##
 # Male Table to combine
@@ -632,6 +634,13 @@ gt::gtsave(t1_combined_full, filename = "Table1_Combined_zscore.png") #save comb
 
 ```
 
+## Saving Dataset
+```{r}
+# Save master dataset locally
+saveRDS(nhanes_newvars, file = here("data", "processed", "nhanes_newvars_zscore.rds"))
+```
+
+
 ## Assess Missingness
 
 ```{r}
@@ -688,4 +697,3 @@ table_missingness
 gt::gtsave(table_missingness, filename = "table_missingness.png") #save male as png
 
 ```
-
